@@ -1,0 +1,65 @@
+<!-- Shared catalogue block: filters, result count, cards, empty state and pager -->
+<form class="catalogue-filters" method="get" action="{{ catalogue.action_url }}">
+  <input type="text" name="q" id="catalogueSearchBox" value="{{ catalogue.q }}" placeholder="Search products..." aria-label="Search products">
+  <select name="categoryId" id="catalogueCategory" aria-label="Category">
+    <option value="" {% if not catalogue.category_id %}selected{% endif %}>All categories</option>
+    {% for category in catalogue.categories %}
+      <option value="{{ category['categoryId'] }}" {% if catalogue.category_id == category['categoryId'] %}selected{% endif %}>{{ category['name'] }}</option>
+    {% endfor %}
+  </select>
+  <select name="sort" id="catalogueSort" aria-label="Sort by">
+    <option value="relevance" {% if catalogue.sort == 'relevance' %}selected{% endif %}>relevance</option>
+    <option value="price_asc" {% if catalogue.sort == 'price_asc' %}selected{% endif %}>price low to high</option>
+    <option value="price_desc" {% if catalogue.sort == 'price_desc' %}selected{% endif %}>price high to low</option>
+    <option value="name_asc" {% if catalogue.sort == 'name_asc' %}selected{% endif %}>name A–Z</option>
+  </select>
+  <button type="submit">Apply</button>
+</form>
+
+<p class="catalogue-count">{{ catalogue.total }} product{% if catalogue.total != 1 %}s{% endif %}</p>
+
+{% if catalogue.items %}
+<section class="container catalogue-grid">
+  <div class="row g-4">
+    {% for row in catalogue.items %}
+      <div class="col-lg-4 col-md-6 col-sm-12">
+        <div class="card shadow-sm text-center h-100">
+          <a href="/productDescription?productId={{ row['productId'] }}">
+            <img src="{{ url_for('static', filename='uploads/' + row['image']) }}" class="card-img-top p-3 product-img" alt="{{ row['name'] }}">
+          </a>
+          <div class="card-body d-flex flex-column">
+            <h5 class="card-title">{{ row['name'] }}</h5>
+            <p class="card-text text-success fw-bold">Rs {{ row['price'] }}</p>
+            <div class="mt-auto">
+              <a href="/addToCart?productId={{ row['productId'] }}" class="btn btn-success">Add to Cart</a>
+              <form action="{{ url_for('add_to_wishlist') }}" method="post" class="d-inline">
+                <input type="hidden" name="productId" value="{{ row['productId'] }}">
+                <button type="submit" class="btn btn-danger"><i class="fas fa-heart"></i> Wishlist</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<div class="catalogue-empty">
+  <p>No products found{% if catalogue.q %} for &ldquo;{{ catalogue.q }}&rdquo;{% endif %}{% if catalogue.category_name %} in {{ catalogue.category_name }}{% endif %}.</p>
+  <a href="{{ catalogue.clear_url }}">Clear all filters</a>
+</div>
+{% endif %}
+
+<div class="catalogue-pager">
+  {% if catalogue.prev_url %}
+    <a class="catalogue-page-link" href="{{ catalogue.prev_url }}">Previous</a>
+  {% else %}
+    <span class="catalogue-page-link disabled">Previous</span>
+  {% endif %}
+  <span class="catalogue-page-status">Page {{ catalogue.page }} of {{ catalogue.total_pages }}</span>
+  {% if catalogue.next_url %}
+    <a class="catalogue-page-link" href="{{ catalogue.next_url }}">Next</a>
+  {% else %}
+    <span class="catalogue-page-link disabled">Next</span>
+  {% endif %}
+</div>

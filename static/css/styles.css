@@ -288,3 +288,147 @@ body {
     height: 35px;
   }
 }
+
+/* Catalogue filters: search, category and sort on one row */
+.catalogue-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    max-width: 1100px;
+    margin: 20px auto;
+    padding: 15px 20px;
+    background: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+.catalogue-filters input[type="text"],
+.catalogue-filters select {
+    min-width: 180px;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background: #ffffff;
+    font-family: inherit;
+    font-size: 15px;
+}
+.catalogue-filters input[type="text"] {
+    flex: 1 1 240px;
+}
+.catalogue-filters input[type="text"]:focus,
+.catalogue-filters select:focus {
+    border-color: #007bff;
+    outline: none;
+    box-shadow: 0 0 5px rgba(0, 123, 255, 0.4);
+}
+.catalogue-filters button {
+    padding: 8px 18px;
+    border: none;
+    border-radius: 5px;
+    background: #007bff;
+    color: #ffffff;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s ease-in-out;
+}
+.catalogue-filters button:hover {
+    background: #0056b3;
+}
+
+/* Catalogue result count line ("23 products") */
+.catalogue-count {
+    max-width: 1100px;
+    margin: 10px auto 0;
+    padding: 0 20px;
+    color: #333333;
+    font-weight: bold;
+    text-align: center;
+}
+
+/* Catalogue empty state */
+.catalogue-empty {
+    max-width: 600px;
+    margin: 30px auto;
+    padding: 30px 20px;
+    background: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    color: #555555;
+    text-align: center;
+}
+.catalogue-empty p {
+    margin-bottom: 15px;
+    font-size: 16px;
+}
+.catalogue-empty a {
+    display: inline-block;
+    padding: 10px 18px;
+    background: #007bff;
+    color: #ffffff;
+    border-radius: 5px;
+    font-weight: bold;
+    text-decoration: none;
+    transition: background 0.3s ease-in-out;
+}
+.catalogue-empty a:hover {
+    background: #0056b3;
+}
+
+/* Catalogue pager: Previous / Page X of Y / Next */
+.catalogue-pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    max-width: 1100px;
+    margin: 30px auto 10px;
+    padding: 0 20px;
+}
+.catalogue-pager .catalogue-page-link {
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 5px;
+    background: #007bff;
+    color: #ffffff;
+    font-weight: bold;
+    text-decoration: none;
+    transition: background 0.3s ease-in-out;
+}
+.catalogue-pager .catalogue-page-link:hover {
+    background: #0056b3;
+}
+.catalogue-pager .catalogue-page-link.disabled {
+    background: #e0e0e0;
+    color: #999999;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+.catalogue-pager .catalogue-page-status {
+    color: #333333;
+    font-weight: bold;
+}
+
+/* Catalogue controls on narrow screens */
+@media (max-width: 768px) {
+    .catalogue-filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .catalogue-filters input[type="text"],
+    .catalogue-filters select,
+    .catalogue-filters button {
+        min-width: 0;
+        width: 100%;
+    }
+    .catalogue-pager {
+        gap: 10px;
+    }
+}
+
+/* Catalogue cards on pages without home.html's inline card sizing */
+.catalogue-grid .product-img {
+    height: 250px;
+    object-fit: contain;
+}

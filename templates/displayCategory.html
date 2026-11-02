@@ -4,6 +4,8 @@
 <title>Category: {{categoryName}}</title>
 <link rel="stylesheet" href={{ url_for('static', filename='css/home.css') }} />
 <link rel="stylesheet" href={{ url_for('static', filename='css/topStyle.css') }} />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
 <div id="title">
@@ -32,38 +34,13 @@
 			<img src={{url_for('static', filename='images/shoppingCart.png')}} id="cartIcon" />
 			CART {{noOfItems}}
 		</a>
+		<a class="link" href="{{ url_for('wishlist') }}">Wishlist ({{ wishlistCount }})</a>
 	</div>
 </div>
 
 <div>
-	<h2>Showing all products of Category {{categoryName}}:</h2>
-	{% for itemData in data %}
-	<table>
-		<tr id="productName">
-			{% for row in itemData %}
-			<td>
-				{{row[1]}}
-			</td>
-			{% endfor %}
-		</tr>
-		<tr id="productImage">
-			{% for row in itemData %}
-			<td>
-				<a href="/productDescription?productId={{row[0]}}">
-					<img src={{ url_for('static', filename='uploads/' + row[3]) }} id="itemImage" />
-				</a>
-			</td>
-			{% endfor %}
-		</tr>
-		<tr id="productPrice">
-			{% for row in itemData %}
-			<td>
-				Rs {{row[2]}}
-			</td>
-			{% endfor %}
-		</tr>
-	</table>
-	{% endfor %}
+	<h2>Showing all products of Category {{ catalogue.category_name }}:</h2>
+	{% include 'catalogue.html' %}
 </div>
 </body>
 </html>

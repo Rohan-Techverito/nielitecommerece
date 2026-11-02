@@ -22,14 +22,10 @@ def is_admin():
 @app.route("/")
 def root():
     loggedIn, firstName, noOfItems = getLoginDetails()
-    with sqlite3.connect('database.db') as conn:
-        cur = conn.cursor()
-        cur.execute('SELECT productId, name, price, description, image, stock FROM products')
-        itemData = cur.fetchall()
-        cur.execute('SELECT categoryId, name FROM categories')
-        categoryData = cur.fetchall()
-    itemData = parse(itemData)   
-    return render_template('home.html', itemData=itemData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryData=categoryData)
+    # '/' handles every catalogue query parameter: search, category, sort and page
+    catalogue = getCatalogue(request.args, 'root')
+    wishlistCount = getWishlistCount()
+    return render_template('home.html', itemData=catalogue['items'], catalogue=catalogue, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, wishlistCount=wishlistCount)
 
 # Fetch user details if logged in
 def getLoginDetails():
@@ -165,25 +161,22 @@ def edit_product(productId):
 @app.route("/displayCategory")
 def displayCategory():
     loggedIn, firstName, noOfItems = getLoginDetails()
-    categoryId = request.args.get("categoryId")
-    
-    if not categoryId or not categoryId.isdigit():
-        return redirect(url_for('root'))
-    
-    with sqlite3.connect('database.db') as conn:
-        cur = conn.cursor()
-        cur.execute("""SELECT products.productId, products.name, products.price, products.image, categories.name 
-                       FROM products, categories 
-                       WHERE products.categoryId = categories.categoryId 
-                       AND categories.categoryId = ?""", (categoryId,))
-        data = cur.fetchall()
-    
-    if not data:
-        return redirect(url_for('root'))
-    
-    categoryName = data[0][4]
-    data = parse(data)
-    return render_template('displayCategory.html', data=data, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryName=categoryName)
+    # Same catalogue query as '/', so direct category links keep taking q, sort and page
+    catalogue = getCatalogue(request.args, 'displayCategory')
+
+    # A missing, non-numeric or unknown category falls back to the unfiltered catalogue
+    if catalogue['category_id'] is None:
+        values = {}
+        if catalogue['q']:
+            values['q'] = catalogue['q']
+        if request.args.get('sort') in SORT_OPTIONS:
+            values['sort'] = catalogue['sort']
+        if catalogue['page'] > 1:
+            values['page'] = catalogue['page']
+        return redirect(url_for('root', **values))
+
+    wishlistCount = getWishlistCount()
+    return render_template('displayCategory.html', catalogue=catalogue, categoryName=catalogue['category_name'], loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, wishlistCount=wishlistCount)
 
 @app.route("/account/profile")
 def profileHome():
@@ -625,6 +618,142 @@ def parse(data):
             i += 1
         ans.append(curr)
     return ans
+
+# Shared catalogue query engine: search + category filter + sort + paging
+PAGE_SIZE = 12
+
+SORT_OPTIONS = {
+    'relevance': 'ORDER BY name_rank ASC, products.name ASC, products.productId ASC',
+    'price_asc': 'ORDER BY products.price ASC, products.productId ASC',
+    'price_desc': 'ORDER BY products.price DESC, products.productId ASC',
+    'name_asc': 'ORDER BY products.name ASC, products.productId ASC',
+}
+
+# Escape LIKE wildcards so the shopper's text is matched literally
+def escape_like(term: str) -> str:
+    return term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
+# Build the catalogue page (search, single category, sort, paging) from query args
+def getCatalogue(args, endpoint: str = 'root') -> dict:
+    raw_q = args.get('q')
+    q = str(raw_q).strip() if raw_q is not None else ''
+
+    raw_sort = args.get('sort')
+    sort = str(raw_sort).strip() if raw_sort is not None else ''
+    if sort not in SORT_OPTIONS:
+        sort = 'relevance'
+
+    raw_page = args.get('page')
+    page_text = str(raw_page).strip() if raw_page is not None else ''
+
+    with sqlite3.connect('database.db') as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        cur.execute('SELECT categoryId, name FROM categories ORDER BY name ASC')
+        categories = cur.fetchall()
+
+        # Resolve the requested category; unknown or non-numeric means no filter
+        category_id = None
+        category_name = None
+        raw_category = args.get('categoryId')
+        category_text = str(raw_category).strip() if raw_category is not None else ''
+        if category_text.isdigit():
+            requested_category = int(category_text)
+            for category in categories:
+                if category['categoryId'] == requested_category:
+                    category_id = requested_category
+                    category_name = category['name']
+                    break
+
+        conditions = []
+        params = []
+        name_rank = '0'
+        rank_params = []
+
+        if category_id is not None:
+            conditions.append('products.categoryId = ?')
+            params.append(category_id)
+
+        # The whole typed phrase is one literal substring, matched against
+        # product name, description and category name
+        if q:
+            pattern = '%' + escape_like(q) + '%'
+            conditions.append(
+                "(products.name LIKE ? ESCAPE '\\' OR products.description LIKE ? ESCAPE '\\' "
+                "OR categories.name LIKE ? ESCAPE '\\')"
+            )
+            params.extend([pattern, pattern, pattern])
+            # Relevance: products whose name contains the phrase come first
+            name_rank = "CASE WHEN products.name LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END"
+            rank_params.append(pattern)
+
+        where_clause = ('WHERE ' + ' AND '.join(conditions)) if conditions else ''
+
+        cur.execute('SELECT COUNT(*) FROM products '
+                    'JOIN categories ON products.categoryId = categories.categoryId ' + where_clause,
+                    params)
+        total = cur.fetchone()[0]
+
+        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+        if total_pages < 1:
+            total_pages = 1
+
+        # page 0, non-numeric pages and pages past the end never error
+        page = int(page_text) if page_text.isdigit() else 1
+        if page < 1:
+            page = 1
+        if page > total_pages:
+            page = total_pages
+
+        offset = (page - 1) * PAGE_SIZE
+        cur.execute('SELECT products.productId, products.name, products.price, products.image, '
+                    'products.stock, categories.name AS categoryName, '
+                    + name_rank + ' AS name_rank '
+                    'FROM products JOIN categories ON products.categoryId = categories.categoryId '
+                    + where_clause + ' ' + SORT_OPTIONS[sort] + ' LIMIT ? OFFSET ?',
+                    rank_params + params + [PAGE_SIZE, offset])
+        items = cur.fetchall()
+
+    def catalogue_url(page_number: int) -> str:
+        values = {'sort': sort}
+        if q:
+            values['q'] = q
+        if category_id is not None:
+            values['categoryId'] = category_id
+        if page_number > 1:
+            values['page'] = page_number
+        return url_for(endpoint, **values)
+
+    return {
+        'items': items,
+        'total': total,
+        'page': page,
+        'total_pages': total_pages,
+        'per_page': PAGE_SIZE,
+        'q': q,
+        'sort': sort,
+        'category_id': category_id,
+        'category_name': category_name,
+        'categories': categories,
+        'prev_url': catalogue_url(page - 1) if page > 1 else None,
+        'next_url': catalogue_url(page + 1) if page < total_pages else None,
+        'clear_url': url_for('root'),
+        'action_url': url_for(endpoint),
+    }
+
+# Number of wishlist items for the logged-in user (0 when signed out)
+def getWishlistCount() -> int:
+    if 'email' not in session:
+        return 0
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT userId FROM users WHERE email = ?", (session['email'],))
+        result = cur.fetchone()
+        if not result:
+            return 0
+        cur.execute("SELECT COUNT(*) FROM wishlist WHERE userId = ?", (result[0],))
+        return cur.fetchone()[0]
 
 if __name__ == '__main__':
     app.run(debug=True)

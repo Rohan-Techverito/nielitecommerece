@@ -198,8 +198,8 @@
 <body>
 
 <div id="title">
-    <form>
-        <input id="searchBox" type="text" name="searchQuery" placeholder="Search...">
+    <form action="{{ url_for('root') }}">
+        <input id="searchBox" type="text" name="q" placeholder="Search...">
         <input id="searchButton" type="submit" value="Search">
     </form>
 
