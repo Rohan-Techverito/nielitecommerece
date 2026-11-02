@@ -23,6 +23,22 @@ conn.execute('''CREATE TABLE IF NOT EXISTS wishlist (
     FOREIGN KEY(productId) REFERENCES products(productId)
 )''')
 
+# Create reviews table only if it doesn't exist
+conn.execute('''CREATE TABLE IF NOT EXISTS reviews (
+    reviewId INTEGER PRIMARY KEY AUTOINCREMENT,
+    productId INTEGER NOT NULL,
+    userId INTEGER NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    title TEXT,
+    comment TEXT,
+    review_date TEXT NOT NULL,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    hidden_reason TEXT,
+    UNIQUE(userId, productId),
+    FOREIGN KEY(productId) REFERENCES products(productId),
+    FOREIGN KEY(userId) REFERENCES users(userId)
+)''')
+
 conn.commit()
 conn.close()
 

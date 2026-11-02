@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from flask import *
 import sqlite3, hashlib, os
 from werkzeug.utils import secure_filename
@@ -11,8 +13,136 @@ UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'jpeg', 'jpg', 'png', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# Reviews table definition, byte-for-byte the same DDL as database.py.
+# app.py never imports database.py and database.db is committed, so the table is
+# also created from here at import time to upgrade an already deployed database.
+REVIEWS_TABLE_DDL = '''CREATE TABLE IF NOT EXISTS reviews (
+    reviewId INTEGER PRIMARY KEY AUTOINCREMENT,
+    productId INTEGER NOT NULL,
+    userId INTEGER NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    title TEXT,
+    comment TEXT,
+    review_date TEXT NOT NULL,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    hidden_reason TEXT,
+    UNIQUE(userId, productId),
+    FOREIGN KEY(productId) REFERENCES products(productId),
+    FOREIGN KEY(userId) REFERENCES users(userId)
+)'''
+
+# Create the reviews table if it is missing
+def ensure_reviews_table() -> None:
+    with sqlite3.connect('database.db') as conn:
+        conn.execute(REVIEWS_TABLE_DDL)
+        conn.commit()
+
 # Ensure upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Ensure the reviews table exists
+ensure_reviews_table()
+
+# Fetch a shopper's userId from their email, None when there is no such user
+def get_user_id(email: str) -> int | None:
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT userId FROM users WHERE email = ?", (email,))
+        result = cur.fetchone()
+    return result[0] if result else None
+
+# A shopper may review a product only once they have ordered it.
+# Any order row is enough, however many times the product was ordered.
+def has_purchased(userId: int, productId: int) -> bool:
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM allorders WHERE userId = ? AND productId = ? LIMIT 1", (userId, productId))
+        return cur.fetchone() is not None
+
+# Average rating (one decimal place) and count of the visible reviews only,
+# (None, 0) when the product has no visible review so callers can tell that
+# apart from an average of 0.0
+def get_rating_summary(productId: int) -> tuple[float | None, int]:
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT AVG(rating), COUNT(*) FROM reviews WHERE productId = ? AND hidden = 0", (productId,))
+        avg, count = cur.fetchone()
+    if not count:
+        return (None, 0)
+    return (round(avg, 1), count)
+
+# Average rating (one decimal place) and visible review count of every product
+# that has at least one visible review. A product without reviews is simply
+# absent from the dict, so the catalogue can skip it instead of testing for 0.
+def get_rating_summaries() -> dict[int, tuple[float, int]]:
+    summaries: dict[int, tuple[float, int]] = {}
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT productId, AVG(rating), COUNT(*) FROM reviews WHERE hidden = 0 GROUP BY productId")
+        for productId, avg, count in cur.fetchall():
+            summaries[productId] = (round(avg, 1), count)
+    return summaries
+
+# All visible reviews of a product, newest first, with the author's first name
+def get_reviews(productId: int) -> list[sqlite3.Row]:
+    with sqlite3.connect('database.db') as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""SELECT reviews.reviewId, reviews.productId, reviews.userId, reviews.rating,
+                              reviews.title, reviews.comment, reviews.review_date, reviews.hidden,
+                              reviews.hidden_reason, users.firstName
+                       FROM reviews
+                       JOIN users ON reviews.userId = users.userId
+                       WHERE reviews.productId = ? AND reviews.hidden = 0
+                       ORDER BY reviews.review_date DESC, reviews.reviewId DESC""", (productId,))
+        return cur.fetchall()
+
+# The shopper's own review of a product. Hidden reviews are returned as well so
+# the UNIQUE(userId, productId) constraint can be honoured.
+def get_review_for_user(productId: int, userId: int) -> sqlite3.Row | None:
+    with sqlite3.connect('database.db') as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM reviews WHERE productId = ? AND userId = ?", (productId, userId))
+        return cur.fetchone()
+
+# Average rating for display, '' when the product has no visible review
+def format_rating(value: float | None) -> str:
+    if value is None:
+        return ''
+    return f'{value:.1f}'
+
+# Everything the product page's review section needs: the average and count of
+# the visible reviews, the visible reviews themselves, the shopper's own review
+# and whether they may write one. A hidden review is invisible to its author
+# too, so it counts as no review at all and the author gets the ordinary
+# create form back.
+def build_review_context(productId: int, email: str | None) -> dict:
+    userId = get_user_id(email) if email else None
+    signedIn = userId is not None
+    purchased = has_purchased(userId, productId) if signedIn else False
+    avg, count = get_rating_summary(productId)
+    ownReview = get_review_for_user(productId, userId) if signedIn else None
+    visibleReview = ownReview if ownReview is not None and not ownReview['hidden'] else None
+    return {
+        'avg_rating': format_rating(avg),
+        'review_count': count,
+        'reviews': get_reviews(productId),
+        'user_review': visibleReview,
+        'can_review': signedIn and purchased and visibleReview is None,
+        'purchased': purchased,
+        'signed_in': signedIn,
+    }
+
+# Delete every review of a product. Pass an open connection to delete the
+# reviews in the same transaction as the product row itself.
+def delete_product_reviews(productId: int, conn: sqlite3.Connection | None = None) -> None:
+    if conn is None:
+        with sqlite3.connect('database.db') as ownConn:
+            ownConn.execute("DELETE FROM reviews WHERE productId = ?", (productId,))
+            ownConn.commit()
+        return
+    conn.execute("DELETE FROM reviews WHERE productId = ?", (productId,))
 
 # Check if user is admin
 def is_admin():
@@ -29,7 +159,7 @@ def root():
         cur.execute('SELECT categoryId, name FROM categories')
         categoryData = cur.fetchall()
     itemData = parse(itemData)   
-    return render_template('home.html', itemData=itemData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryData=categoryData)
+    return render_template('home.html', itemData=itemData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryData=categoryData, ratingSummary=get_rating_summaries())
 
 # Fetch user details if logged in
 def getLoginDetails():
@@ -107,11 +237,14 @@ def add_product():
 
 # Delete product (Admin only)
 @app.route("/admin/delete/<int:productId>")
-def delete_product(productId):
+def delete_product(productId: int):
     if not is_admin():
         return redirect(url_for('root'))
     with sqlite3.connect('database.db') as conn:
         cur = conn.cursor()
+        # Remove the product's reviews in the same transaction, so a deleted
+        # product leaves no review behind on the admin reviews page
+        delete_product_reviews(productId, conn)
         cur.execute("DELETE FROM products WHERE productId = ?", (productId,))
         conn.commit()
     return redirect(url_for('admin_dashboard'))
@@ -300,7 +433,180 @@ def productDescription():
     if not productData:
         return redirect(url_for('root'))
     
-    return render_template("productDescription.html", data=productData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
+    # Anonymous shoppers have no email, so they get the sign-in prompt instead
+    # of a review form
+    reviewContext = build_review_context(int(productId), session.get('email'))
+
+    # ?edit=1 swaps the shopper's own review for a form pre-filled with it
+    editing = request.args.get('edit') == '1' and reviewContext['user_review'] is not None
+    review_form: dict = {}
+    if editing:
+        ownReview = reviewContext['user_review']
+        review_form = {
+            'rating': str(ownReview['rating']),
+            'title': ownReview['title'] or '',
+            'comment': ownReview['comment'] or '',
+        }
+
+    return render_template("productDescription.html", data=productData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems,
+                           editing=editing, review_form=review_form, review_errors={}, **reviewContext)
+
+# Render the product page again from a review route, so a rejected submission
+# can show a message next to its own field and keep what the shopper typed
+def render_product_page(productId: int, review_form: dict | None = None,
+                        review_errors: dict | None = None, editing: bool = False,
+                        status: int = 200):
+    loggedIn, firstName, noOfItems = getLoginDetails()
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute('SELECT productId, name, price, description, image, stock FROM products WHERE productId = ?', (productId,))
+        productData = cur.fetchone()
+
+    if not productData:
+        return redirect(url_for('root'))
+
+    reviewContext = build_review_context(productId, session.get('email'))
+    rendered = render_template("productDescription.html", data=productData, loggedIn=loggedIn,
+                               firstName=firstName, noOfItems=noOfItems, editing=editing,
+                               review_form=review_form or {}, review_errors=review_errors or {},
+                               **reviewContext)
+    return rendered, status
+
+# One user-facing message per invalid review field. A field with no entry in the
+# returned dict is valid; title and comment are optional.
+def validate_review_submission(form) -> dict[str, str]:
+    errors: dict[str, str] = {}
+
+    rating = (form.get('rating') or '').strip()
+    if not rating:
+        errors['rating'] = 'Please choose a rating of 1 to 5 stars.'
+    elif not rating.isdigit() or not 1 <= int(rating) <= 5:
+        errors['rating'] = 'Rating must be a whole number from 1 to 5 stars.'
+
+    title = form.get('title') or ''
+    if len(title) > 80:
+        errors['title'] = 'Title must be 80 characters or fewer.'
+
+    comment = form.get('comment') or ''
+    if len(comment) > 1000:
+        errors['comment'] = 'Comment must be 1000 characters or fewer.'
+
+    return errors
+
+# Create the signed-in shopper's review of a product they have bought
+@app.route('/product/<int:productId>/review', methods=['POST'])
+def add_review(productId: int):
+    email = session.get('email')
+    if not email:
+        return redirect(url_for('loginForm'))
+
+    userId = get_user_id(email)
+    if userId is None:
+        return redirect(url_for('loginForm'))
+
+    # Reviews are limited to customers who bought the product
+    if not has_purchased(userId, productId):
+        return render_product_page(productId, status=403)
+
+    errors = validate_review_submission(request.form)
+    if errors:
+        review_form = {
+            'rating': request.form.get('rating', ''),
+            'title': request.form.get('title', ''),
+            'comment': request.form.get('comment', ''),
+        }
+        return render_product_page(productId, review_form=review_form, review_errors=errors, status=400)
+
+    rating = int(request.form.get('rating'))
+    # Stored exactly as typed: Jinja escapes on output, so nothing is escaped or
+    # truncated here
+    title = request.form.get('title') or ''
+    comment = request.form.get('comment') or ''
+    review_date = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')
+
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        # UNIQUE(userId, productId) enforces one review per shopper per product,
+        # so submitting again updates that same row. hidden and hidden_reason are
+        # deliberately left untouched: a shopper whose review was hidden who
+        # submits again updates it in place and it stays hidden.
+        cur.execute('''INSERT INTO reviews (productId, userId, rating, title, comment, review_date, hidden)
+                       VALUES (?, ?, ?, ?, ?, ?, 0)
+                       ON CONFLICT(userId, productId) DO UPDATE SET
+                           rating = excluded.rating,
+                           title = excluded.title,
+                           comment = excluded.comment,
+                           review_date = excluded.review_date''',
+                    (productId, userId, rating, title, comment, review_date))
+        conn.commit()
+
+    return redirect(url_for('productDescription', productId=productId))
+
+# Edit the shopper's own review; only ever the row they own
+@app.route('/product/<int:productId>/review/edit', methods=['POST'])
+def edit_review(productId: int):
+    email = session.get('email')
+    if not email:
+        return redirect(url_for('loginForm'))
+
+    userId = get_user_id(email)
+    if userId is None:
+        return redirect(url_for('loginForm'))
+
+    reviewId = request.form.get('reviewId', '')
+    if not reviewId.isdigit():
+        return 'Review not found.', 403
+
+    errors = validate_review_submission(request.form)
+    if errors:
+        review_form = {
+            'rating': request.form.get('rating', ''),
+            'title': request.form.get('title', ''),
+            'comment': request.form.get('comment', ''),
+        }
+        return render_product_page(productId, review_form=review_form, review_errors=errors, editing=True, status=400)
+
+    rating = int(request.form.get('rating'))
+    title = request.form.get('title') or ''
+    comment = request.form.get('comment') or ''
+    review_date = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d %H:%M:%S')
+
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        # Filtering on reviewId AND userId leaves another shopper's row untouched
+        cur.execute("UPDATE reviews SET rating = ?, title = ?, comment = ?, review_date = ? WHERE reviewId = ? AND userId = ?",
+                    (rating, title, comment, review_date, int(reviewId), userId))
+        if cur.rowcount == 0:
+            conn.rollback()
+            return 'Review not found.', 403
+        conn.commit()
+
+    return redirect(url_for('productDescription', productId=productId))
+
+# Delete the shopper's own review; only ever the row they own
+@app.route('/product/<int:productId>/review/delete', methods=['POST'])
+def delete_review(productId: int):
+    email = session.get('email')
+    if not email:
+        return redirect(url_for('loginForm'))
+
+    userId = get_user_id(email)
+    if userId is None:
+        return redirect(url_for('loginForm'))
+
+    reviewId = request.form.get('reviewId', '')
+    if not reviewId.isdigit():
+        return 'Review not found.', 403
+
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM reviews WHERE reviewId = ? AND userId = ?", (int(reviewId), userId))
+        if cur.rowcount == 0:
+            conn.rollback()
+            return 'Review not found.', 403
+        conn.commit()
+
+    return redirect(url_for('productDescription', productId=productId))
 
 @app.route("/addToCart")
 def addToCart():
@@ -532,6 +838,59 @@ def user_orders():
         orders = cur.fetchall()
 
     return render_template("user_orders.html", orders=orders)
+
+# Every review, visible and hidden, with the product name and its author, for
+# the admin reviews page. Newest first.
+def get_all_reviews() -> list[sqlite3.Row]:
+    with sqlite3.connect('database.db') as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""SELECT reviews.*, products.name AS product_name,
+                              users.firstName, users.lastName
+                       FROM reviews
+                       JOIN products ON reviews.productId = products.productId
+                       JOIN users ON reviews.userId = users.userId
+                       ORDER BY reviews.review_date DESC, reviews.reviewId DESC""")
+        return cur.fetchall()
+
+# Admin reviews page: hidden reviews are listed too, with the reason they were
+# hidden, and each row carries a hide or a restore control
+@app.route('/admin/reviews')
+def admin_reviews() -> str:
+    if not is_admin():
+        return redirect(url_for('root'))
+    return render_template('admin_reviews.html', reviews=get_all_reviews(), error=request.args.get('error', ''), error_review=request.args.get('error_review', type=int))
+
+# Hide a review, which keeps it but removes it from the product page, the
+# average and the counts. A reason must be typed before anything is hidden.
+@app.route('/admin/reviews/<int:reviewId>/hide', methods=['POST'])
+def hide_review(reviewId: int):
+    if not is_admin():
+        return redirect(url_for('root'))
+
+    reason = (request.form.get('reason') or '').strip()
+    if not reason:
+        return redirect(url_for('admin_reviews', error='A reason is required to hide a review', error_review=reviewId))
+
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE reviews SET hidden = 1, hidden_reason = ? WHERE reviewId = ?", (reason, reviewId))
+        conn.commit()
+
+    return redirect(url_for('admin_reviews'))
+
+# Restore a hidden review and clear the reason it was hidden
+@app.route('/admin/reviews/<int:reviewId>/restore', methods=['POST'])
+def restore_review(reviewId: int):
+    if not is_admin():
+        return redirect(url_for('root'))
+
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE reviews SET hidden = 0, hidden_reason = NULL WHERE reviewId = ?", (reviewId,))
+        conn.commit()
+
+    return redirect(url_for('admin_reviews'))
 
 @app.route("/removeFromCart")
 def removeFromCart():

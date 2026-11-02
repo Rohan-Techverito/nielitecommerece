@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reviews | Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/adminReviews.css') }}">
+</head>
+<body>
+
+    <h2 class="admin-reviews-title">Customer Reviews</h2>
+
+    {% if reviews %}
+    <table class="admin-reviews-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Product</th>
+                <th>Shopper</th>
+                <th>Rating</th>
+                <th>Title</th>
+                <th>Comment</th>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for review in reviews %}
+            <tr class="{% if review['hidden'] %}hidden-row{% else %}visible-row{% endif %}">
+                <td>{{ review['reviewId'] }}</td>
+                <td>{{ review['product_name'] }}</td>
+                <td>{{ review['firstName'] }} {{ review['lastName'] }}</td>
+                <td>{{ review['rating'] }} / 5</td>
+                <td>{{ review['title'] }}</td>
+                <td>{{ review['comment'] }}</td>
+                <td>{{ review['review_date'] }}</td>
+                <td>
+                    {% if review['hidden'] %}
+                    <span class="hidden-label">Hidden</span>
+                    <p class="hidden-reason">Reason: {{ review['hidden_reason'] or '' }}</p>
+                    {% else %}
+                    <span class="visible-label">Visible</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if review['hidden'] %}
+                    <form action="{{ url_for('restore_review', reviewId=review['reviewId']) }}" method="POST">
+                        <button type="submit" class="btn-restore">Restore</button>
+                    </form>
+                    {% else %}
+                    <form action="{{ url_for('hide_review', reviewId=review['reviewId']) }}" method="POST">
+                        <input type="text" name="reason" placeholder="Reason for hiding" required>
+                        <button type="submit" class="btn-hide">Hide</button>
+                    </form>
+                    {% if error and error_review == review['reviewId'] %}
+                    <p class="admin-error">{{ error }}</p>
+                    {% endif %}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="admin-empty">No reviews yet.</p>
+    {% endif %}
+
+    <a href="{{ url_for('admin_dashboard') }}" class="back-link">Back to Dashboard</a>
+
+</body>
+</html>

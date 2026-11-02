@@ -64,6 +64,94 @@
 	<div id="addToCart">
 		<a href="/addToCart?productId={{request.args.get('productId')}}">Add to Cart</a>
 	</div>
+	<div class="review-section">
+		<h2>Customer Reviews</h2>
+		<div class="review-summary">
+			{% if avg_rating %}
+			<span class="review-average">{{ avg_rating }} out of 5</span>
+			<span class="review-count">({{ review_count }} review{% if review_count != 1 %}s{% endif %})</span>
+			{% else %}
+			<span class="review-empty">No reviews yet</span>
+			{% endif %}
+		</div>
+
+		{% for review in reviews %}
+		<div class="review-card">
+			<div class="review-meta">
+				<span class="review-author">{{ review['firstName'] }}</span>
+				<span class="review-date">{{ review['review_date'] }}</span>
+			</div>
+			<div class="review-stars">{{ '★' * review['rating'] }} ({{ review['rating'] }} / 5)</div>
+			{% if review['title'] %}
+			<h3 class="review-title">{{ review['title'] }}</h3>
+			{% endif %}
+			{% if review['comment'] %}
+			<p class="review-comment">{{ review['comment'] }}</p>
+			{% endif %}
+		</div>
+		{% endfor %}
+
+		{% if can_review or (editing and user_review) %}
+		<form class="review-form" action="{% if editing and user_review %}/product/{{ data[0] }}/review/edit{% else %}/product/{{ data[0] }}/review{% endif %}" method="POST">
+			<h3>{% if editing and user_review %}Edit your review{% else %}Write a review{% endif %}</h3>
+			{% if editing and user_review %}
+			<input type="hidden" name="reviewId" value="{{ user_review['reviewId'] }}" />
+			{% endif %}
+			<div class="review-form-field">
+				<span class="review-form-label">Your rating</span>
+				<div class="review-stars-input">
+					{% for star in [1, 2, 3, 4, 5] %}
+					<label class="review-star-option"><input type="radio" name="rating" value="{{ star }}"{% if review_form.get('rating')|string == star|string %} checked{% endif %} /> {{ star }} star{% if star != 1 %}s{% endif %}</label>
+					{% endfor %}
+				</div>
+				{% if review_errors.get('rating') %}
+				<p class="field-error">{{ review_errors['rating'] }}</p>
+				{% endif %}
+			</div>
+			<div class="review-form-field">
+				<label class="review-form-label" for="reviewTitle">Title (optional, up to 80 characters)</label>
+				<input type="text" id="reviewTitle" name="title" maxlength="80" value="{{ review_form.get('title', '') }}" />
+				{% if review_errors.get('title') %}
+				<p class="field-error">{{ review_errors['title'] }}</p>
+				{% endif %}
+			</div>
+			<div class="review-form-field">
+				<label class="review-form-label" for="reviewComment">Comment (optional, up to 1000 characters)</label>
+				<textarea id="reviewComment" name="comment" rows="4" maxlength="1000">{{ review_form.get('comment', '') }}</textarea>
+				{% if review_errors.get('comment') %}
+				<p class="field-error">{{ review_errors['comment'] }}</p>
+				{% endif %}
+			</div>
+			<div class="review-actions">
+				<button type="submit" class="review-submit">{% if editing and user_review %}Save changes{% else %}Post review{% endif %}</button>
+				{% if editing and user_review %}
+				<a class="review-cancel" href="/productDescription?productId={{ data[0] }}">Cancel</a>
+				{% endif %}
+			</div>
+		</form>
+		{% elif user_review %}
+		<div class="review-own">
+			<p class="review-own-note">Your review: {{ '★' * user_review['rating'] }} ({{ user_review['rating'] }} out of 5) on {{ user_review['review_date'] }}</p>
+			{% if user_review['title'] %}
+			<h3 class="review-title">{{ user_review['title'] }}</h3>
+			{% endif %}
+			{% if user_review['comment'] %}
+			<p class="review-comment">{{ user_review['comment'] }}</p>
+			{% endif %}
+			<div class="review-actions">
+				<a class="review-edit-link" href="/productDescription?productId={{ data[0] }}&amp;edit=1">Edit your review</a>
+				<form class="review-own-delete" action="/product/{{ data[0] }}/review/delete" method="POST">
+					<input type="hidden" name="reviewId" value="{{ user_review['reviewId'] }}" />
+					<button type="submit" class="review-delete">Delete your review</button>
+				</form>
+			</div>
+		</div>
+		{% elif signed_in %}
+		<p class="review-locked">Reviews are limited to customers who bought this product. Once you have ordered it, you can rate and review it here.</p>
+		{% else %}
+		<p class="review-signin"><a href="/loginForm">Sign in</a> to write a review. Reviews are limited to customers who bought this product.</p>
+		{% endif %}
+	</div>
 </div>
 </body>
 </html>

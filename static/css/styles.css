@@ -288,3 +288,20 @@ body {
     height: 35px;
   }
 }
+
+/* Average rating and review count badge on the home page product cards */
+.rating-badge {
+    display: inline-block;
+    margin: 0 auto 10px;
+    padding: 3px 12px;
+    border-radius: 12px;
+    background: #fff3cd;
+    color: #8a6d3b;
+    font-size: 14px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.rating-badge i {
+    color: #f0ad4e;
+}

@@ -1,0 +1,113 @@
+/* Admin reviews page */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    margin: 0;
+    padding: 20px;
+    text-align: center;
+}
+
+.admin-reviews-title {
+    color: #333;
+}
+
+/* Same full-width bordered table as the admin dashboard */
+.admin-reviews-table {
+    width: 95%;
+    margin: 20px auto;
+    border-collapse: collapse;
+    background: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.admin-reviews-table th,
+.admin-reviews-table td {
+    padding: 10px;
+    border: 1px solid #ddd;
+    text-align: center;
+    vertical-align: top;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.admin-reviews-table th {
+    background-color: #007BFF;
+    color: white;
+}
+
+/* Hidden reviews are set apart from the visible ones */
+.hidden-row {
+    background-color: #eeeeee;
+    color: #777777;
+}
+
+.hidden-label {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #c82333;
+    color: white;
+    font-weight: bold;
+}
+
+.visible-label {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.hidden-reason {
+    margin-top: 6px;
+    max-width: 240px;
+    color: #555555;
+    font-style: italic;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.admin-error {
+    display: inline-block;
+    margin: 10px auto;
+    padding: 10px 15px;
+    border: 1px solid #c82333;
+    border-radius: 5px;
+    background: #f8d7da;
+    color: #c82333;
+    font-weight: bold;
+}
+
+.admin-empty {
+    color: #777777;
+    font-style: italic;
+}
+
+.admin-reviews-table input[name="reason"] {
+    width: 200px;
+    padding: 6px;
+    margin-bottom: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.btn-hide,
+.btn-restore,
+.back-link {
+    display: inline-block;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    background: #c82333;
+    color: white;
+    font-weight: bold;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.btn-restore {
+    background: #28a745;
+}
+
+.back-link {
+    background: #007bff;
+    margin-top: 15px;
+}
