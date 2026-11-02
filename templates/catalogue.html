@@ -1,5 +1,5 @@
 <!-- Shared catalogue block: filters, result count, cards, empty state and pager -->
-<form class="catalogue-filters" method="get" action="{{ catalogue.action_url }}">
+<form class="catalogue-filters" id="catalogueFilters" method="get" action="{{ catalogue.action_url }}">
   <input type="text" name="q" id="catalogueSearchBox" value="{{ catalogue.q }}" placeholder="Search products..." aria-label="Search products">
   <select name="categoryId" id="catalogueCategory" aria-label="Category">
     <option value="" {% if not catalogue.category_id %}selected{% endif %}>All categories</option>
@@ -13,8 +13,9 @@
     <option value="price_desc" {% if catalogue.sort == 'price_desc' %}selected{% endif %}>price high to low</option>
     <option value="name_asc" {% if catalogue.sort == 'name_asc' %}selected{% endif %}>name A–Z</option>
   </select>
-  <button type="submit">Apply</button>
+  <button type="submit" id="catalogueSearchButton">Search</button>
 </form>
+<script src="{{ url_for('static', filename='js/catalogue.js') }}"></script>
 
 <p class="catalogue-count">{{ catalogue.total }} product{% if catalogue.total != 1 %}s{% endif %}</p>
 
@@ -45,8 +46,8 @@
 </section>
 {% else %}
 <div class="catalogue-empty">
-  <p>No products found{% if catalogue.q %} for &ldquo;{{ catalogue.q }}&rdquo;{% endif %}{% if catalogue.category_name %} in {{ catalogue.category_name }}{% endif %}.</p>
-  <a href="{{ catalogue.clear_url }}">Clear all filters</a>
+  <h3 class="catalogue-empty-heading" id="catalogueEmptyHeading">No products found{% if catalogue.q %} for &ldquo;{{ catalogue.q }}&rdquo;{% endif %}{% if catalogue.category_name %} in {{ catalogue.category_name }}{% endif %}.</h3>
+  <a id="catalogueClearLink" class="catalogue-clear-link" href="{{ catalogue.clear_url }}">Clear all filters</a>
 </div>
 {% endif %}
 
