@@ -75,22 +75,6 @@
 			{% endif %}
 		</div>
 
-		{% for review in reviews %}
-		<div class="review-card">
-			<div class="review-meta">
-				<span class="review-author">{{ review['firstName'] }}</span>
-				<span class="review-date">{{ review['review_date'] }}</span>
-			</div>
-			<div class="review-stars">{{ '★' * review['rating'] }} ({{ review['rating'] }} / 5)</div>
-			{% if review['title'] %}
-			<h3 class="review-title">{{ review['title'] }}</h3>
-			{% endif %}
-			{% if review['comment'] %}
-			<p class="review-comment">{{ review['comment'] }}</p>
-			{% endif %}
-		</div>
-		{% endfor %}
-
 		{% if can_review or (editing and user_review) %}
 		<form class="review-form" action="{% if editing and user_review %}/product/{{ data[0] }}/review/edit{% else %}/product/{{ data[0] }}/review{% endif %}" method="POST">
 			<h3>{% if editing and user_review %}Edit your review{% else %}Write a review{% endif %}</h3>
@@ -101,7 +85,7 @@
 				<span class="review-form-label">Your rating</span>
 				<div class="review-stars-input">
 					{% for star in [1, 2, 3, 4, 5] %}
-					<label class="review-star-option"><input type="radio" name="rating" value="{{ star }}"{% if review_form.get('rating')|string == star|string %} checked{% endif %} /> {{ star }} star{% if star != 1 %}s{% endif %}</label>
+					<label class="review-star-option" aria-label="{{ star }} star{% if star != 1 %}s{% endif %}"><input type="radio" name="rating" value="{{ star }}"{% if review_form.get('rating')|string == star|string %} checked{% endif %} /><span class="review-star-glyph" aria-hidden="true">★</span></label>
 					{% endfor %}
 				</div>
 				{% if review_errors.get('rating') %}
@@ -151,6 +135,22 @@
 		{% else %}
 		<p class="review-signin"><a href="/loginForm">Sign in</a> to write a review. Reviews are limited to customers who bought this product.</p>
 		{% endif %}
+
+		{% for review in reviews %}
+		<div class="review-card">
+			<div class="review-meta">
+				<span class="review-author">{{ review['firstName'] }}</span>
+				<span class="review-date">{{ review['review_date'] }}</span>
+			</div>
+			<div class="review-stars">{{ '★' * review['rating'] }} ({{ review['rating'] }} / 5)</div>
+			{% if review['title'] %}
+			<h3 class="review-title">{{ review['title'] }}</h3>
+			{% endif %}
+			{% if review['comment'] %}
+			<p class="review-comment">{{ review['comment'] }}</p>
+			{% endif %}
+		</div>
+		{% endfor %}
 	</div>
 </div>
 </body>

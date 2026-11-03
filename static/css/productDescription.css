@@ -126,9 +126,48 @@
 	margin-bottom: 4px;
 }
 
+/* Five clickable stars: the radio itself is hidden, its glyph is what the
+   shopper sees and clicks, and the glyph of the checked radio is highlighted */
 .review-star-option {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	font-weight: normal;
 	color: inherit;
+	cursor: pointer;
+	line-height: 1;
+}
+
+.review-star-option input[type="radio"] {
+	position: absolute;
+	width: 0;
+	height: 0;
+	margin: 0;
+	padding: 0;
+	border: none;
+	opacity: 0;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+.review-star-glyph {
+	font-size: 30px;
+	line-height: 1;
+	color: #cccccc;
+	transition: color 0.15s ease-in-out;
+}
+
+.review-star-option:hover .review-star-glyph {
+	color: #f0ad4e;
+}
+
+.review-star-option input[type="radio"]:checked + .review-star-glyph {
+	color: #f0ad4e;
+}
+
+.review-star-option input[type="radio"]:focus-visible + .review-star-glyph {
+	outline: 2px solid #007bff;
+	outline-offset: 2px;
 }
 
 .review-own-note {
@@ -213,6 +252,16 @@
 	color: #007bff;
 	font-weight: bold;
 	text-decoration: none;
+}
+
+/* The form, the shoppers' own review or the buyers-only explanation sits
+   between the summary above it and the list of reviews below it */
+.review-section .review-form,
+.review-section .review-own,
+.review-section .review-locked,
+.review-section .review-signin {
+	margin-top: 15px;
+	margin-bottom: 20px;
 }
 
 

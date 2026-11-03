@@ -316,7 +316,9 @@ def displayCategory():
     
     categoryName = data[0][4]
     data = parse(data)
-    return render_template('displayCategory.html', data=data, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryName=categoryName)
+    # Only products with at least one visible review are in the dict, so the
+    # category page can skip the rating of every other product
+    return render_template('displayCategory.html', data=data, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryName=categoryName, ratingSummary=get_rating_summaries())
 
 @app.route("/account/profile")
 def profileHome():

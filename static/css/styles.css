@@ -289,17 +289,19 @@ body {
   }
 }
 
-/* Average rating and review count badge on the home page product cards */
+/* Average rating and review count badge beside the product name on the home
+   page product cards, read as secondary to the name itself */
 .rating-badge {
     display: inline-block;
-    margin: 0 auto 10px;
-    padding: 3px 12px;
-    border-radius: 12px;
+    margin-left: 6px;
+    padding: 2px 8px;
+    border-radius: 10px;
     background: #fff3cd;
     color: #8a6d3b;
-    font-size: 14px;
-    font-weight: bold;
+    font-size: 13px;
+    font-weight: normal;
     white-space: nowrap;
+    vertical-align: middle;
 }
 
 .rating-badge i {

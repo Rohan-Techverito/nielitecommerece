@@ -43,6 +43,9 @@
 			{% for row in itemData %}
 			<td>
 				{{row[1]}}
+				{% if row[0] in ratingSummary %}
+				<span class="product-rating">{{ "%.1f"|format(ratingSummary[row[0]][0]) }} ({{ ratingSummary[row[0]][1] }})</span>
+				{% endif %}
 			</td>
 			{% endfor %}
 		</tr>
