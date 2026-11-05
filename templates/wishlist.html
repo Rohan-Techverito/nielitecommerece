@@ -79,6 +79,38 @@
         .back-home:hover {
             background: #0056b3;
         }
+        .wishlist-item .stock-label {
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .wishlist-item .stock-in {
+            color: #198754;
+        }
+        .wishlist-item .stock-low {
+            color: #fd7e14;
+        }
+        .wishlist-item .stock-out {
+            color: #dc3545;
+        }
+        .wishlist-item .add-to-cart-link {
+            display: inline-block;
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            background-color: #28a745;
+            color: white;
+            border-radius: 5px;
+            text-decoration: none;
+            transition: background 0.3s ease-in-out;
+        }
+        .wishlist-item .add-to-cart-link:hover {
+            background-color: #218838;
+        }
+        .wishlist-item .btn-out-of-stock[disabled] {
+            background-color: #6c757d;
+            color: white;
+            cursor: not-allowed;
+            margin-bottom: 8px;
+        }
     </style>
 </head>
 <body>
@@ -96,6 +128,13 @@
                              alt="{{ item[1] }}">
                         <h5>{{ item[1] }}</h5>
                         <p>Rs {{ item[2] }}</p>
+                        {% set label, labelClass = stock_status(item[4]) %}
+                        <p class="stock-label {{ labelClass }}">{{ label }}</p>
+                        {% if item[4] and item[4] > 0 %}
+                        <a href="/addToCart?productId={{ item[0] }}" class="add-to-cart-link"><i class="fas fa-cart-plus"></i> Add to Cart</a>
+                        {% else %}
+                        <button type="button" class="btn-out-of-stock" disabled>Out of stock</button>
+                        {% endif %}
                         <form action="{{ url_for('remove_from_wishlist') }}" method="post">
                             <input type="hidden" name="productId" value="{{ item[0] }}">
                             <button type="submit"><i class="fas fa-trash-alt"></i> Remove</button>

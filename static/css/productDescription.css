@@ -33,4 +33,32 @@
 	font-size: 20px;
 }
 
+/* Availability label and disabled out-of-stock control on the product page */
+.stock-in {
+	color: #198754;
+	font-weight: bold;
+}
+
+.stock-low {
+	color: #fd7e14;
+	font-weight: bold;
+}
+
+.stock-out {
+	color: #dc3545;
+	font-weight: bold;
+}
+
+#addToCart .btn-out-of-stock,
+#addToCart .btn-out-of-stock:disabled,
+#addToCart .btn-out-of-stock[disabled] {
+	background-color: #6c757d;
+	border: none;
+	color: #ffffff;
+	font-size: 18px;
+	padding: 6px 12px;
+	border-radius: 4px;
+	cursor: not-allowed;
+}
+
 

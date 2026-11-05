@@ -37,33 +37,30 @@
 
 <div>
 	<h2>Showing all products of Category {{categoryName}}:</h2>
-	{% for itemData in data %}
 	<table>
-		<tr id="productName">
-			{% for row in itemData %}
-			<td>
-				{{row[1]}}
-			</td>
-			{% endfor %}
-		</tr>
-		<tr id="productImage">
-			{% for row in itemData %}
-			<td>
+		{% for row in data %}
+		<tr class="productRow">
+			<td id="productImage">
 				<a href="/productDescription?productId={{row[0]}}">
 					<img src={{ url_for('static', filename='uploads/' + row[3]) }} id="itemImage" />
 				</a>
 			</td>
-			{% endfor %}
-		</tr>
-		<tr id="productPrice">
-			{% for row in itemData %}
+			<td id="productName">{{row[1]}}</td>
+			<td id="productPrice">Rs {{row[2]}}</td>
 			<td>
-				Rs {{row[2]}}
+				{% set label, labelClass = stock_status(row[4]) %}
+				<span class="{{ labelClass }}">{{ label }}</span>
 			</td>
-			{% endfor %}
+			<td>
+				{% if row[4] and row[4] > 0 %}
+				<a href="/addToCart?productId={{row[0]}}" class="add-to-cart-link">Add to Cart</a>
+				{% else %}
+				<button type="button" class="btn-out-of-stock" disabled>Out of stock</button>
+				{% endif %}
+			</td>
 		</tr>
+		{% endfor %}
 	</table>
-	{% endfor %}
 </div>
 </body>
 </html>

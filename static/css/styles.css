@@ -288,3 +288,29 @@ body {
     height: 35px;
   }
 }
+
+/* Stock availability labels and disabled out-of-stock control */
+.stock-in {
+  color: #198754;
+  font-weight: bold;
+}
+
+.stock-low {
+  color: #fd7e14;
+  font-weight: bold;
+}
+
+.stock-out {
+  color: #dc3545;
+  font-weight: bold;
+}
+
+.btn-out-of-stock,
+.btn-out-of-stock:disabled,
+.btn-out-of-stock[disabled] {
+  background-color: #6c757d;
+  border-color: #6c757d;
+  color: #ffffff;
+  cursor: not-allowed;
+  opacity: 0.8;
+}

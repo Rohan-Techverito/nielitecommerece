@@ -55,14 +55,21 @@
 			</tr>
 			<tr>
 				<td>Stock</td>
-				<td>{{data[5]}}</td>
+				<td>
+					{% set label, labelClass = stock_status(data[5]) %}
+					<span class="{{ labelClass }}">{{ label }}</span>
+				</td>
 			</tr>
 		</table>
 		<h2>Description</h2>
 		<p>{{data[3]}}</p>
 	</div>
 	<div id="addToCart">
+		{% if data[5] and data[5] > 0 %}
 		<a href="/addToCart?productId={{request.args.get('productId')}}">Add to Cart</a>
+		{% else %}
+		<button type="button" class="btn-out-of-stock" disabled>Out of stock</button>
+		{% endif %}
 	</div>
 </div>
 </body>

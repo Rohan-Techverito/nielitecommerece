@@ -93,6 +93,7 @@
             <p class="error">{{ error }}</p>
         {% endif %}
         <form action="/login" method="POST">
+            <input type="hidden" name="next" value="{{ next }}">
             <input type="text" name="email" placeholder="Email" required>
             <input type="password" name="password" placeholder="Password" required>
             <button type="submit" class="btn">Login</button>

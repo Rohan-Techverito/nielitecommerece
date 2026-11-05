@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from flask import *
 import sqlite3, hashlib, os
 from werkzeug.utils import secure_filename
@@ -10,6 +12,21 @@ app.secret_key = 'your-secret-key-change-this-in-production'  # Change this in p
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'jpeg', 'jpg', 'png', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Stock at or below this count is considered low ("Only N left")
+STOCK_LOW_THRESHOLD: int = 5
+
+# Availability label for a given stock count
+def stock_status(stock: int | float | None) -> tuple[str, str]:
+    available = int(stock or 0)
+    if available <= 0:
+        return ('Out of stock', 'stock-out')
+    if available <= STOCK_LOW_THRESHOLD:
+        return (f'Only {available} left', 'stock-low')
+    return (f'In stock ({available} available)', 'stock-in')
+
+# Make the availability label available in every template
+app.jinja_env.globals['stock_status'] = stock_status
 
 # Ensure upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -28,11 +45,11 @@ def root():
         itemData = cur.fetchall()
         cur.execute('SELECT categoryId, name FROM categories')
         categoryData = cur.fetchall()
-    itemData = parse(itemData)   
+    # Flat rows (productId, name, price, description, image, stock) so the grid can show availability
     return render_template('home.html', itemData=itemData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryData=categoryData)
 
 # Fetch user details if logged in
-def getLoginDetails():
+def getLoginDetails() -> tuple[bool, str, int]:
     with sqlite3.connect('database.db') as conn:
         cur = conn.cursor()
         if 'email' not in session:
@@ -45,13 +62,54 @@ def getLoginDetails():
             result = cur.fetchone()
             if result:
                 userId, firstName = result
-                cur.execute("SELECT count(productId) FROM kart WHERE userId = ?", (userId,))
+                # Cart count is the total number of units, not the number of lines
+                cur.execute("SELECT COALESCE(SUM(quantity), 0) FROM kart WHERE userId = ?", (userId,))
                 noOfItems = cur.fetchone()[0]
             else:
                 loggedIn = False
                 firstName = ''
                 noOfItems = 0
     return (loggedIn, firstName, noOfItems)
+
+# Build the cart lines of a user with live price and stock read from products
+def get_cart_items(userId: int) -> list[dict]:
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("""SELECT products.productId, products.name, products.price, products.image, products.stock, kart.quantity
+                       FROM kart
+                       JOIN products ON kart.productId = products.productId
+                       WHERE kart.userId = ?
+                       ORDER BY products.name""", (userId,))
+        rows = cur.fetchall()
+    items = []
+    for productId, name, price, image, stock, quantity in rows:
+        items.append({
+            'productId': productId,
+            'name': name,
+            'price': price,
+            'image': image,
+            'stock': stock,
+            'quantity': quantity,
+            'line_total': round(price * quantity, 2)
+        })
+    return items
+
+# Carry a message (or per cart line messages) to the next cart page render
+def set_cart_notice(message: str | None, line_messages: dict[int, str] | None = None) -> None:
+    session['cart_notice'] = {'message': message, 'lines': dict(line_messages or {})}
+
+def pop_cart_notice() -> dict:
+    notice = session.pop('cart_notice', None)
+    if not notice:
+        return {'message': None, 'lines': {}}
+    lines = {}
+    # Keys come back from the session cookie as strings, so normalise them to ids
+    for productId, text in (notice.get('lines') or {}).items():
+        try:
+            lines[int(productId)] = text
+        except (TypeError, ValueError):
+            continue
+    return {'message': notice.get('message'), 'lines': lines}
 
 @app.route("/admin")
 def admin_dashboard():
@@ -172,7 +230,7 @@ def displayCategory():
     
     with sqlite3.connect('database.db') as conn:
         cur = conn.cursor()
-        cur.execute("""SELECT products.productId, products.name, products.price, products.image, categories.name 
+        cur.execute("""SELECT products.productId, products.name, products.price, products.image, products.stock, categories.name 
                        FROM products, categories 
                        WHERE products.categoryId = categories.categoryId 
                        AND categories.categoryId = ?""", (categoryId,))
@@ -181,8 +239,8 @@ def displayCategory():
     if not data:
         return redirect(url_for('root'))
     
-    categoryName = data[0][4]
-    data = parse(data)
+    # Flat rows so every product renders its own image, price and availability
+    categoryName = data[0][5]
     return render_template('displayCategory.html', data=data, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryName=categoryName)
 
 @app.route("/account/profile")
@@ -265,24 +323,32 @@ def updateProfile():
         
         return redirect(url_for('editProfile'))
 
+# Only local absolute paths are accepted, so 'next' cannot redirect off-site
+def safe_redirect_target(target: str | None) -> str:
+    if target and target.startswith('/') and not target.startswith('//'):
+        return target
+    return url_for('root')
+
 @app.route("/loginForm")
-def loginForm():
+def loginForm() -> Response:
     if 'email' in session:
         return redirect(url_for('root'))
     else:
-        return render_template('login.html', error='')
+        return render_template('login.html', error='', next=request.args.get('next', ''))
 
 @app.route("/login", methods=['POST', 'GET'])
-def login():
+def login() -> Response:
+    next_target = request.form.get('next') or request.args.get('next')
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
         if is_valid(email, password):
             session['email'] = email
-            return redirect(url_for('root'))
+            return redirect(safe_redirect_target(next_target))
         else:
             error = 'Invalid UserId / Password'
-            return render_template('login.html', error=error)
+            return render_template('login.html', error=error, next=next_target or '')
+    return render_template('login.html', error='', next=next_target or '')
 
 @app.route("/productDescription")
 def productDescription():
@@ -303,51 +369,150 @@ def productDescription():
     return render_template("productDescription.html", data=productData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
 
 @app.route("/addToCart")
-def addToCart():
+def addToCart() -> Response:
     if 'email' not in session:
-        return redirect(url_for('loginForm'))
-    else:
-        productId = request.args.get('productId')
-        if not productId or not productId.isdigit():
-            return redirect(url_for('root'))
-        
-        productId = int(productId)
-        with sqlite3.connect('database.db') as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT userId FROM users WHERE email = ?", (session['email'],))
-            result = cur.fetchone()
-            if result:
-                userId = result[0]
-                try:
-                    cur.execute("INSERT INTO kart (userId, productId) VALUES (?, ?)", (userId, productId))
-                    conn.commit()
-                    msg = "Added successfully"
-                except:
-                    conn.rollback()
-                    msg = "Error occurred"
+        return redirect(url_for('loginForm', next=url_for('cart')))
+
+    productId = request.args.get('productId')
+    if not productId or not productId.isdigit():
         return redirect(url_for('root'))
 
-@app.route("/cart")
-def cart():
-    if 'email' not in session:
-        return redirect(url_for('loginForm'))
-    loggedIn, firstName, noOfItems = getLoginDetails()
-    email = session['email']
+    productId = int(productId)
     with sqlite3.connect('database.db') as conn:
         cur = conn.cursor()
-        cur.execute("SELECT userId FROM users WHERE email = ?", (email,))
+        cur.execute("SELECT userId FROM users WHERE email = ?", (session['email'],))
         result = cur.fetchone()
-        if result:
-            userId = result[0]
-            cur.execute("SELECT products.productId, products.name, products.price, products.image FROM products, kart WHERE products.productId = kart.productId AND kart.userId = ?", (userId,))
-            products = cur.fetchall()
+        if not result:
+            return redirect(url_for('root'))
+
+        userId = result[0]
+
+        # Stock is read live on every request, so admin edits apply to the next action
+        cur.execute("SELECT stock FROM products WHERE productId = ?", (productId,))
+        product = cur.fetchone()
+        if not product:
+            return redirect(url_for('root'))
+
+        stock = int(product[0] or 0)
+        if stock <= 0:
+            # Out of stock: nothing is added and products.stock is never written
+            return redirect(url_for('root'))
+
+        cur.execute("SELECT quantity FROM kart WHERE userId = ? AND productId = ?", (userId, productId))
+        line = cur.fetchone()
+
+        line_messages = None
+        try:
+            if line:
+                # Already in the cart: raise the quantity instead of adding a second line
+                if int(line[0] or 0) >= stock:
+                    line_messages = {productId: f'Only {stock} available'}
+                else:
+                    cur.execute("UPDATE kart SET quantity = MIN(quantity + 1, ?) WHERE userId = ? AND productId = ?",
+                                (stock, userId, productId))
+                    conn.commit()
+            else:
+                cur.execute("INSERT INTO kart (userId, productId, quantity) VALUES (?, ?, 1)", (userId, productId))
+                conn.commit()
+        except sqlite3.Error as e:
+            conn.rollback()
+            print(f"Error adding to cart: {e}")
+
+    if line_messages:
+        set_cart_notice(None, line_messages)
+
+    return redirect(url_for('root'))
+
+@app.route("/cart")
+def cart() -> Response:
+    if 'email' not in session:
+        return redirect(url_for('loginForm', next=url_for('cart')))
+    loggedIn, firstName, noOfItems = getLoginDetails()
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT userId FROM users WHERE email = ?", (session['email'],))
+        result = cur.fetchone()
+
+    userId = result[0] if result else None
+    items = get_cart_items(userId) if userId is not None else []
+    totalPrice = round(sum(item['line_total'] for item in items), 2)
+    return render_template("cart.html", items=items, totalPrice=totalPrice, notice=pop_cart_notice(), loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
+
+# Change the quantity of a cart line (or remove it); stock is only ever read here
+@app.route('/cart/update', methods=['POST'])
+def update_cart_quantity() -> Response:
+    if 'email' not in session:
+        return redirect(url_for('loginForm', next=url_for('cart')))
+
+    productId = request.form.get('productId')
+    action = request.form.get('action')
+    if not productId or not productId.isdigit() or action not in ('increase', 'decrease', 'remove'):
+        return redirect(url_for('cart'))
+
+    productId = int(productId)
+    line_messages = None
+
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT userId FROM users WHERE email = ?", (session['email'],))
+        result = cur.fetchone()
+        if not result:
+            return redirect(url_for('cart'))
+
+        userId = result[0]
+
+        if action == 'remove':
+            cur.execute("DELETE FROM kart WHERE userId = ? AND productId = ?", (userId, productId))
+            conn.commit()
+            return redirect(url_for('cart'))
+
+        # Quantity and stock are re-read on every action; products.stock is never written here
+        cur.execute("""SELECT kart.quantity, products.stock
+                       FROM kart
+                       JOIN products ON kart.productId = products.productId
+                       WHERE kart.userId = ? AND kart.productId = ?""", (userId, productId))
+        line = cur.fetchone()
+        if not line:
+            # The line, or the product behind it, is gone: drop the leftover kart row
+            cur.execute("DELETE FROM kart WHERE userId = ? AND productId = ?", (userId, productId))
+            conn.commit()
+            return redirect(url_for('cart'))
+
+        quantity = int(line[0] or 0)
+        stock = int(line[1] or 0)
+
+        if action == 'decrease':
+            # Decrementing a single unit removes the line from the cart
+            new_quantity = min(quantity - 1, stock)
+            if new_quantity <= 0:
+                cur.execute("DELETE FROM kart WHERE userId = ? AND productId = ?", (userId, productId))
+            else:
+                cur.execute("UPDATE kart SET quantity = ? WHERE userId = ? AND productId = ?",
+                            (new_quantity, userId, productId))
+            conn.commit()
+            return redirect(url_for('cart'))
+
+        # action == 'increase': the line never goes above the available stock
+        new_quantity = min(quantity + 1, stock)
+        if new_quantity > quantity:
+            cur.execute("UPDATE kart SET quantity = ? WHERE userId = ? AND productId = ?",
+                        (new_quantity, userId, productId))
+            conn.commit()
         else:
-            products = []
-    
-    totalPrice = 0
-    for row in products:
-        totalPrice += row[2]
-    return render_template("cart.html", products=products, totalPrice=totalPrice, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
+            if new_quantity < quantity:
+                # Stock fell below the stored quantity: clamp the line down to what is available
+                if new_quantity <= 0:
+                    cur.execute("DELETE FROM kart WHERE userId = ? AND productId = ?", (userId, productId))
+                else:
+                    cur.execute("UPDATE kart SET quantity = ? WHERE userId = ? AND productId = ?",
+                                (new_quantity, userId, productId))
+                conn.commit()
+            line_messages = {productId: f'Only {stock} available'}
+
+    if line_messages:
+        set_cart_notice(None, line_messages)
+
+    return redirect(url_for('cart'))
 
 @app.route("/addToWishlist", methods=["GET", "POST"])
 def add_to_wishlist():
@@ -406,7 +571,7 @@ def wishlist():
         result = cur.fetchone()
         if result:
             user_id = result[0]
-            cur.execute('''SELECT products.productId, products.name, products.price, products.image
+            cur.execute('''SELECT products.productId, products.name, products.price, products.image, products.stock
                             FROM wishlist
                             JOIN products ON wishlist.productId = products.productId
                             WHERE wishlist.userId = ?''', (user_id,))
@@ -417,72 +582,181 @@ def wishlist():
     return render_template('wishlist.html', wishlist_items=wishlist_items)
 
 @app.route("/checkout")
-def checkout():
+def checkout() -> Response:
     if 'email' not in session:
-        return redirect(url_for('loginForm'))
+        return redirect(url_for('loginForm', next=url_for('cart')))
     loggedIn, firstName, noOfItems = getLoginDetails()
     email = session['email']
     with sqlite3.connect('database.db') as conn:
         cur = conn.cursor()
         cur.execute("SELECT userId FROM users WHERE email = ?", (email,))
         result = cur.fetchone()
-        if result:
-            userId = result[0]
-            cur.execute("SELECT products.productId, products.name, products.price, products.image FROM products, kart WHERE products.productId = kart.productId AND kart.userId = ?", (userId,))
-            products = cur.fetchall()
-        else:
-            products = []
-    
-    totalPrice = 0
-    for row in products:
-        totalPrice += row[2]
-    return render_template("checkout.html", products=products, totalPrice=totalPrice, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
 
-@app.route("/saveorder")
-def saveorder():
+    userId = result[0] if result else None
+    # Same rows the cart page shows, so the prices displayed here are the prices the order will use
+    items = get_cart_items(userId) if userId is not None else []
+    totalPrice = round(sum(item['line_total'] for item in items), 2)
+    return render_template("checkout.html", items=items, totalPrice=totalPrice, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
+
+# Place an order for a user's cart atomically: validate stock, decrement it, record the order rows
+# and clear the cart in one transaction, so nothing is oversold and stock never goes negative
+def place_order(userId: int, order_date: str) -> dict:
+    result = {'status': 'empty', 'lines': [], 'total': 0.0, 'message': '', 'line_messages': {}}
+    # isolation_level=None so BEGIN IMMEDIATE can be issued by hand and held for the whole order
+    conn = sqlite3.connect('database.db', isolation_level=None)
+    in_transaction = False
+    try:
+        cur = conn.cursor()
+
+        # Cart lines whose product was deleted by an admin leave the cart and the order
+        cur.execute('BEGIN IMMEDIATE')
+        in_transaction = True
+        cur.execute("""SELECT kart.productId
+                       FROM kart
+                       LEFT JOIN products ON kart.productId = products.productId
+                       WHERE kart.userId = ? AND products.productId IS NULL""", (userId,))
+        missing = [row[0] for row in cur.fetchall()]
+        if missing:
+            cur.executemany("DELETE FROM kart WHERE userId = ? AND productId = ?",
+                            [(userId, productId) for productId in missing])
+            cur.execute('COMMIT')
+            in_transaction = False
+            result.update({
+                'status': 'removed',
+                'message': 'An item in your cart is no longer available, so it has been removed from your '
+                           'cart. No order was placed - please review your cart.'
+            })
+            return result
+
+        # Re-read the cart with live prices and stock inside the write transaction
+        cur.execute("""SELECT kart.productId, products.name, products.price, products.stock, kart.quantity
+                       FROM kart
+                       JOIN products ON kart.productId = products.productId
+                       WHERE kart.userId = ?
+                       ORDER BY products.name""", (userId,))
+        rows = cur.fetchall()
+
+        lines = []
+        shortages = []
+        for productId, name, price, stock, quantity in rows:
+            stock = int(stock or 0)
+            quantity = int(quantity or 0)
+            if quantity <= 0:
+                continue
+            lines.append({
+                'productId': productId,
+                'name': name,
+                'unit_price': price,
+                'quantity': quantity,
+                'line_total': round(price * quantity, 2)
+            })
+            if quantity > stock:
+                shortages.append((productId, name, stock))
+
+        if not lines:
+            cur.execute('ROLLBACK')
+            in_transaction = False
+            return result
+
+        if shortages:
+            # Nothing is ordered: every offending line drops to what is available (0 removes it)
+            for productId, name, stock in shortages:
+                if stock > 0:
+                    cur.execute("UPDATE kart SET quantity = ? WHERE userId = ? AND productId = ?",
+                                (stock, userId, productId))
+                else:
+                    cur.execute("DELETE FROM kart WHERE userId = ? AND productId = ?", (userId, productId))
+            cur.execute('COMMIT')
+            in_transaction = False
+            result.update({
+                'status': 'short',
+                'message': 'Your order was not placed because these items are no longer available in the '
+                           'requested quantity: '
+                           + '; '.join(f'{name} (only {stock} available)' for productId, name, stock in shortages)
+                           + '. Your cart has been adjusted - please review it before ordering.',
+                'line_messages': {productId: f'{name}: only {stock} available' for productId, name, stock in shortages}
+            })
+            return result
+
+        # Every line fits: decrement conditionally, record the order and clear the cart in one commit
+        lines_total = 0.0
+        for line in lines:
+            productId = line['productId']
+            quantity = line['quantity']
+            cur.execute("UPDATE products SET stock = stock - ? WHERE productId = ? AND stock >= ?",
+                        (quantity, productId, quantity))
+            if cur.rowcount != 1:
+                # Another shopper took the stock first: undo the whole order
+                cur.execute('ROLLBACK')
+                in_transaction = False
+                result.update({
+                    'status': 'short',
+                    'lines': [],
+                    'total': 0.0,
+                    'message': f'{line["name"]} just sold out, so your order was not placed. '
+                               'Please review your cart.',
+                    'line_messages': {productId: f'{line["name"]} just sold out'}
+                })
+                return result
+            cur.execute("INSERT INTO allorders (userId, productId, quantity, total_price, order_date) VALUES (?, ?, ?, ?, ?)",
+                        (userId, productId, quantity, line['line_total'], order_date))
+            lines_total += line['line_total']
+
+        cur.execute("DELETE FROM kart WHERE userId = ?", (userId,))
+        cur.execute('COMMIT')
+        in_transaction = False
+        result.update({'status': 'placed', 'lines': lines, 'total': round(lines_total, 2)})
+        return result
+    except sqlite3.Error as e:
+        if in_transaction:
+            try:
+                conn.execute('ROLLBACK')
+            except sqlite3.Error:
+                pass
+        print(f"Error placing order: {e}")
+        return {
+            'status': 'short',
+            'lines': [],
+            'total': 0.0,
+            'message': 'Your order could not be placed. Please review your cart and try again.',
+            'line_messages': {}
+        }
+    finally:
+        conn.close()
+
+@app.route("/saveorder", methods=['POST'])
+def saveorder() -> Response:
     if 'email' not in session:
-        return redirect(url_for('loginForm'))
-    
+        return redirect(url_for('loginForm', next=url_for('cart')))
+
     email = session['email']
-    
+
     # Get current IST timestamp
     ist = pytz.timezone('Asia/Kolkata')
     order_date = datetime.now(ist).strftime('%Y-%m-%d %H:%M:%S')
 
     with sqlite3.connect('database.db') as conn:
         cur = conn.cursor()
-
-        # Get user ID
         cur.execute("SELECT userId FROM users WHERE email = ?", (email,))
         result = cur.fetchone()
-        if not result:
-            return redirect(url_for('root'))
-        
-        userId = result[0]
 
-        # Fetch products from the user's cart
-        cur.execute("""
-            SELECT kart.productId, COUNT(kart.productId) AS quantity, SUM(products.price) AS total_price
-            FROM kart 
-            JOIN products ON kart.productId = products.productId
-            WHERE kart.userId = ?
-            GROUP BY kart.productId
-        """, (userId,))
-        
-        cart_items = cur.fetchall()
+    if not result:
+        return redirect(url_for('root'))
 
-        # Save each cart item as an order
-        for item in cart_items:
-            productId, quantity, total_price = item
-            cur.execute("INSERT INTO allorders (userId, productId, quantity, total_price, order_date) VALUES (?, ?, ?, ?, ?)",
-                        (userId, productId, quantity, total_price, order_date))
+    # All database work (validation, stock decrement, order rows) happens inside place_order
+    outcome = place_order(result[0], order_date)
 
-        # Clear the cart
-        cur.execute("DELETE FROM kart WHERE userId = ?", (userId,))
-        
-        conn.commit()
+    if outcome['status'] == 'placed':
+        return render_template("order_confirmation.html", order_lines=outcome['lines'],
+                               order_total=outcome['total'], order_date=order_date)
 
-    return render_template("order_confirmation.html", order_date=order_date)
+    if outcome['status'] == 'empty':
+        set_cart_notice('Your cart is empty.')
+        return redirect(url_for('cart'))
+
+    # 'removed' or 'short': tell the shopper what changed and send them back to the cart
+    set_cart_notice(outcome['message'], outcome['line_messages'])
+    return redirect(url_for('cart'))
 
 @app.route("/vieworders")
 def vieworders():

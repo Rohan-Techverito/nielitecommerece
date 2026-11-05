@@ -229,19 +229,44 @@
 
 <div id="cartItems">
     <h2>Shopping Cart</h2>
+    {% if notice and notice.message %}
+    <div class="cart-notice">{{ notice.message }}</div>
+    {% endif %}
     <div id="tableItems">
-        {% for row in products %}
-        <div>
+        {% for item in items %}
+        <div class="cart-line">
             <div id="itemImage">
-                <img src="{{ url_for('static', filename='uploads/' + row[3]) }}" id="image"/>
+                <img src="{{ url_for('static', filename='uploads/' + item.image) }}" id="image"/>
             </div>
             <div id="itemName">
-                <span id="itemNameTag">{{ row[1] }}</span><br>
-                In stock<br>
-                <a href="/removeFromCart?productId={{ row[0] }}" style="color: red;">Remove</a>
+                <span id="itemNameTag">{{ item.name }}</span><br>
+                Unit price: Rs {{ item.price }}<br>
+                {% set label, labelClass = stock_status(item.stock) %}
+                <span class="{{ labelClass }}">{{ label }}</span>
+                {% if notice and notice.lines.get(item.productId) %}
+                <div class="line-notice">{{ notice.lines.get(item.productId) }}</div>
+                {% endif %}
             </div>
-            <div id="itemPrice">
-                Rs {{ row[2] }}
+            <div class="qty-controls">
+                <form action="{{ url_for('update_cart_quantity') }}" method="post">
+                    <input type="hidden" name="productId" value="{{ item.productId }}">
+                    <input type="hidden" name="action" value="decrease">
+                    <button type="submit" class="qty-btn" title="Decrease quantity">&minus;</button>
+                </form>
+                <span class="qty-value">{{ item.quantity }}</span>
+                <form action="{{ url_for('update_cart_quantity') }}" method="post">
+                    <input type="hidden" name="productId" value="{{ item.productId }}">
+                    <input type="hidden" name="action" value="increase">
+                    <button type="submit" class="qty-btn" title="Increase quantity">+</button>
+                </form>
+                <form action="{{ url_for('update_cart_quantity') }}" method="post">
+                    <input type="hidden" name="productId" value="{{ item.productId }}">
+                    <input type="hidden" name="action" value="remove">
+                    <button type="submit" class="qty-btn qty-remove">Remove</button>
+                </form>
+            </div>
+            <div class="line-total">
+                Rs {{ item.line_total }}
             </div>
         </div>
         {% endfor %}

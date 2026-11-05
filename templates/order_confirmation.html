@@ -9,7 +9,8 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
+            padding: 20px;
             background: linear-gradient(135deg, #f3f3f3, #e3e3e3);
             font-family: 'Poppins', sans-serif;
         }
@@ -19,8 +20,31 @@
             border-radius: 10px;
             text-align: center;
             box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
-            max-width: 400px;
+            max-width: 520px;
+            width: 100%;
             position: relative;
+        }
+        .order-lines {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .order-lines th, .order-lines td {
+            padding: 8px 6px;
+            border-bottom: 1px solid #ddd;
+            text-align: center;
+            font-size: 14px;
+            word-wrap: break-word;
+        }
+        .order-lines th {
+            background: #28a745;
+            color: white;
+        }
+        .order-total {
+            font-weight: bold;
         }
         h2 {
             color: #28a745;
@@ -64,6 +88,29 @@
     <div class="container">
         <h2>🎉 Order Placed Successfully! 🎉</h2>
         <p>Order Date: {{ order_date }}</p>
+        {% if order_lines %}
+        <table class="order-lines">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Quantity</th>
+                    <th>Unit Price</th>
+                    <th>Line Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in order_lines %}
+                <tr>
+                    <td>{{ line.name }}</td>
+                    <td>{{ line.quantity }}</td>
+                    <td>Rs {{ line.unit_price }}</td>
+                    <td>Rs {{ line.line_total }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        <p class="order-total">Order Total: Rs {{ order_total }}</p>
         <a href="{{ url_for('root') }}" class="home-btn">Go to Home</a>
     </div>
 </body>
