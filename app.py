@@ -1,18 +1,34 @@
 from flask import *
 import sqlite3, hashlib, os
+from typing import Optional, Tuple
 from werkzeug.utils import secure_filename
 import requests
 from datetime import datetime
 import pytz
+from database import ensure_schema
+from profile_photos import (
+    PHOTO_ERROR_MESSAGE,
+    PhotoValidationError,
+    delete_photo_file,
+    initials,
+    photo_public_path,
+    save_photo,
+)
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this-in-production'  # Change this in production
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'jpeg', 'jpg', 'png', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+PROFILE_PHOTO_FOLDER = 'static/uploads/profile_photos'
 
 # Ensure upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Profile photos live in their own subfolder, so product images are untouched
+os.makedirs(PROFILE_PHOTO_FOLDER, exist_ok=True)
+
+# Make sure the extra tables and users.profile_photo exist before any request
+ensure_schema()
 
 # Check if user is admin
 def is_admin():
@@ -185,23 +201,90 @@ def displayCategory():
     data = parse(data)
     return render_template('displayCategory.html', data=data, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryName=categoryName)
 
+def _profile_avatar_context(email: str) -> Tuple[Optional[str], str]:
+    """Return the profile page avatar: the public photo path (or None) and the initials.
+
+    A NULL profile_photo, or one whose file is no longer on disk, yields None for
+    the path so the template falls back to the initials avatar instead of a
+    broken image.
+    """
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute('SELECT profile_photo, firstName, lastName FROM users WHERE email = ?', (email,))
+        result = cur.fetchone()
+    if not result:
+        return (None, '?')
+    profile_photo, first_name, last_name = result
+    return (photo_public_path(profile_photo), initials(first_name, last_name))
+
 @app.route("/account/profile")
 def profileHome():
     if 'email' not in session:
         return redirect(url_for('root'))
     loggedIn, firstName, noOfItems = getLoginDetails()
-    return render_template("profileHome.html", loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
+    profile_photo_path, profile_initials = _profile_avatar_context(session['email'])
+    return render_template("profileHome.html", loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems,
+                           profile_photo_path=profile_photo_path, profile_initials=profile_initials)
 
-@app.route("/account/profile/edit")
-def editProfile():
-    if 'email' not in session:
-        return redirect(url_for('root'))
+def _render_edit_profile(photo_error=None):
     loggedIn, firstName, noOfItems = getLoginDetails()
     with sqlite3.connect('database.db') as conn:
         cur = conn.cursor()
-        cur.execute("SELECT userId, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone FROM users WHERE email = ?", (session['email'],))
+        cur.execute('SELECT userId, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone, profile_photo FROM users WHERE email = ?', (session['email'],))
         profileData = cur.fetchone()
-    return render_template("editProfile.html", profileData=profileData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
+    return render_template(
+        'editProfile.html',
+        profileData=profileData,
+        loggedIn=loggedIn,
+        firstName=firstName,
+        noOfItems=noOfItems,
+        profile_photo_path=photo_public_path(profileData[11]) if profileData else None,
+        profile_initials=initials(profileData[2], profileData[3]) if profileData else '?',
+        photo_error=photo_error,
+    )
+
+@app.route('/account/profile/edit')
+def editProfile():
+    if 'email' not in session:
+        return redirect(url_for('root'))
+    return _render_edit_profile()
+
+@app.route('/account/profile/photo', methods=['POST'])
+def upload_profile_photo():
+    if 'email' not in session:
+        return redirect(url_for('loginForm'))
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute('SELECT userId, profile_photo FROM users WHERE email = ?', (session['email'],))
+        result = cur.fetchone()
+        if not result:
+            return redirect(url_for('loginForm'))
+        userId, previous_photo = result
+    photo = request.files.get('photo') or request.files.get('profile_photo') or request.files.get('image') or request.files.get('file')
+    try:
+        filename = save_photo(photo, userId, previous_photo)
+    except PhotoValidationError:
+        return _render_edit_profile(PHOTO_ERROR_MESSAGE)
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute('UPDATE users SET profile_photo = ? WHERE userId = ?', (filename, userId))
+        conn.commit()
+    return redirect(url_for('editProfile'))
+
+@app.route('/account/profile/photo/remove', methods=['POST'])
+def remove_profile_photo():
+    if 'email' not in session:
+        return redirect(url_for('loginForm'))
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute('SELECT userId, profile_photo FROM users WHERE email = ?', (session['email'],))
+        result = cur.fetchone()
+        if result:
+            userId, previous_photo = result
+            cur.execute('UPDATE users SET profile_photo = NULL WHERE userId = ?', (userId,))
+            conn.commit()
+            delete_photo_file(previous_photo)
+    return redirect(url_for('editProfile'))
 
 @app.route("/account/profile/changePassword", methods=["GET", "POST"])
 def changePassword():

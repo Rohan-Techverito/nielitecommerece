@@ -6,6 +6,7 @@
     <title>Edit Profile</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/editProfile.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/topStyle.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/profilePhoto.css') }}">
     <script>
         function toggleDropdown() {
             document.querySelector(".dropdown-content").classList.toggle("show");
@@ -202,6 +203,25 @@
 
 <div class="display">
     <h2>Edit Profile</h2>
+    <div class="profile-photo">
+        {% if profile_photo_path %}
+            <img src="{{ url_for('static', filename=profile_photo_path) }}" alt="Profile photo" class="profile-avatar">
+        {% else %}
+            <div class="profile-avatar">{{ profile_initials }}</div>
+        {% endif %}
+        <form action="{{ url_for('upload_profile_photo') }}" method="POST" enctype="multipart/form-data">
+            <p>Profile Photo:<input type="file" name="photo" id="photo" accept="image/jpeg,image/png,image/webp"></p>
+            {% if photo_error %}
+                <p class="photo-error">{{ photo_error }}</p>
+            {% endif %}
+            <input type="submit" value="Upload Photo">
+        </form>
+        {% if profile_photo_path %}
+        <form action="{{ url_for('remove_profile_photo') }}" method="POST">
+            <input type="submit" value="Remove Photo">
+        </form>
+        {% endif %}
+    </div>
     <form action="/updateProfile" method="POST">
         <p>Email:<input type="email" name="email" value="{{ profileData[1] }}" readonly></p>
         <p>First Name:<input type="text" name="firstName" value="{{ profileData[2] }}"></p>
