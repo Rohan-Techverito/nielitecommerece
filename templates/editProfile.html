@@ -145,6 +145,14 @@
             background: #0056b3;
         }
 
+        .display .field-error {
+            color: #d93025;
+            font-size: 14px;
+            font-weight: normal;
+            text-align: left;
+            margin: 2px 0 8px;
+        }
+
         /* Responsive Design */
         @media (max-width: 600px) {
             #title {
@@ -203,16 +211,26 @@
 <div class="display">
     <h2>Edit Profile</h2>
     <form action="/updateProfile" method="POST">
-        <p>Email:<input type="email" name="email" value="{{ profileData[1] }}" readonly></p>
-        <p>First Name:<input type="text" name="firstName" value="{{ profileData[2] }}"></p>
-        <p>Last Name:<input type="text" name="lastName" value="{{ profileData[3] }}"></p>
-        <p>Address 1:<input type="text" name="address1" value="{{ profileData[4] }}"></p>
-        <p>Address 2:<input type="text" name="address2" value="{{ profileData[5] }}"></p>
-        <p>Zip Code:<input type="text" name="zipcode" value="{{ profileData[6] }}"></p>
-        <p>City:<input type="text" name="city" value="{{ profileData[7] }}"></p>
-        <p>State:<input type="text" name="state" value="{{ profileData[8] }}"></p>
-        <p>Country:<input type="text" name="country" value="{{ profileData[9] }}"></p>
-        <p>Phone Number:<input type="text" name="phone" value="{{ profileData[10] }}"></p>
+        <p>Email:<input type="email" name="email" value="{{ form.get('email', '') }}" readonly></p>
+        {% if errors.get('email') %}<p class="field-error">{{ errors['email'] }}</p>{% endif %}
+        <p>First Name:<input type="text" name="firstName" value="{{ form.get('firstName', '') }}"></p>
+        {% if errors.get('firstName') %}<p class="field-error">{{ errors['firstName'] }}</p>{% endif %}
+        <p>Last Name:<input type="text" name="lastName" value="{{ form.get('lastName', '') }}"></p>
+        {% if errors.get('lastName') %}<p class="field-error">{{ errors['lastName'] }}</p>{% endif %}
+        <p>Address 1:<input type="text" name="address1" value="{{ form.get('address1', '') }}"></p>
+        {% if errors.get('address1') %}<p class="field-error">{{ errors['address1'] }}</p>{% endif %}
+        <p>Address 2:<input type="text" name="address2" value="{{ form.get('address2', '') }}"></p>
+        {% if errors.get('address2') %}<p class="field-error">{{ errors['address2'] }}</p>{% endif %}
+        <p>Zip Code:<input type="text" name="zipcode" value="{{ form.get('zipcode', '') }}"></p>
+        {% if errors.get('zipcode') %}<p class="field-error">{{ errors['zipcode'] }}</p>{% endif %}
+        <p>City:<input type="text" name="city" value="{{ form.get('city', '') }}"></p>
+        {% if errors.get('city') %}<p class="field-error">{{ errors['city'] }}</p>{% endif %}
+        <p>State:<input type="text" name="state" value="{{ form.get('state', '') }}"></p>
+        {% if errors.get('state') %}<p class="field-error">{{ errors['state'] }}</p>{% endif %}
+        <p>Country:<input type="text" name="country" value="{{ form.get('country', '') }}"></p>
+        {% if errors.get('country') %}<p class="field-error">{{ errors['country'] }}</p>{% endif %}
+        <p>Phone Number:<input type="text" name="phone" value="{{ form.get('phone', '') }}"></p>
+        {% if errors.get('phone') %}<p class="field-error">{{ errors['phone'] }}</p>{% endif %}
         <input type="submit" value="Save">
     </form>
 </div>
