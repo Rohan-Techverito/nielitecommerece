@@ -63,6 +63,13 @@
             outline: none;
         }
 
+        .field-error {
+            color: #d93025;
+            font-size: 14px;
+            text-align: left;
+            margin-top: 4px;
+        }
+
         .btn {
             background: #667eea;
             color: white;
@@ -113,62 +120,74 @@
             
             <div class="input-group">
                 <label>Email:</label>
-                <input type="email" name="email" required>
+                <input type="email" name="email" value="{{ form.get('email', '') }}" required>
+                {% if errors.get('email') %}<p class="field-error">{{ errors['email'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Password:</label>
                 <input type="password" name="password" id="password" required>
+                {% if errors.get('password') %}<p class="field-error">{{ errors['password'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Confirm Password:</label>
                 <input type="password" name="cpassword" id="cpassword" required>
+                {% if errors.get('cpassword') %}<p class="field-error">{{ errors['cpassword'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>First Name:</label>
-                <input type="text" name="firstName" required>
+                <input type="text" name="firstName" value="{{ form.get('firstName', '') }}" required>
+                {% if errors.get('firstName') %}<p class="field-error">{{ errors['firstName'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Last Name:</label>
-                <input type="text" name="lastName">
+                <input type="text" name="lastName" value="{{ form.get('lastName', '') }}">
+                {% if errors.get('lastName') %}<p class="field-error">{{ errors['lastName'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Address Line 1:</label>
-                <input type="text" name="address1" required>
+                <input type="text" name="address1" value="{{ form.get('address1', '') }}" required>
+                {% if errors.get('address1') %}<p class="field-error">{{ errors['address1'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Address Line 2:</label>
-                <input type="text" name="address2">
+                <input type="text" name="address2" value="{{ form.get('address2', '') }}">
+                {% if errors.get('address2') %}<p class="field-error">{{ errors['address2'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Zipcode:</label>
-                <input type="text" name="zipcode" required>
+                <input type="text" name="zipcode" value="{{ form.get('zipcode', '') }}" required>
+                {% if errors.get('zipcode') %}<p class="field-error">{{ errors['zipcode'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>City:</label>
-                <input type="text" name="city" required>
+                <input type="text" name="city" value="{{ form.get('city', '') }}" required>
+                {% if errors.get('city') %}<p class="field-error">{{ errors['city'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>State:</label>
-                <input type="text" name="state" required>
+                <input type="text" name="state" value="{{ form.get('state', '') }}" required>
+                {% if errors.get('state') %}<p class="field-error">{{ errors['state'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Country:</label>
-                <input type="text" name="country" required>
+                <input type="text" name="country" value="{{ form.get('country', '') }}" required>
+                {% if errors.get('country') %}<p class="field-error">{{ errors['country'] }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Phone Number:</label>
-                <input type="text" name="phone" required>
+                <input type="text" name="phone" value="{{ form.get('phone', '') }}" required>
+                {% if errors.get('phone') %}<p class="field-error">{{ errors['phone'] }}</p>{% endif %}
             </div>
 
             <button type="submit" class="btn">Register</button>

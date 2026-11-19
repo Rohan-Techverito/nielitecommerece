@@ -47,6 +47,12 @@
         button:hover {
             background-color: darkblue;
         }
+        .field-error {
+            color: #d93025;
+            font-size: 14px;
+            text-align: left;
+            margin-top: 4px;
+        }
         .back-link {
             display: block;
             margin-top: 15px;
@@ -61,23 +67,28 @@
 
     <form action="{{ url_for('add_product') }}" method="POST" enctype="multipart/form-data">
         <label for="name">Product Name:</label>
-        <input type="text" name="name" id="name" required>
+        <input type="text" name="name" id="name" value="{{ form.get('name', '') }}" required>
+        {% if errors.get('name') %}<p class="field-error">{{ errors['name'] }}</p>{% endif %}
 
         <label for="price">Price (₹):</label>
-        <input type="number" name="price" id="price" step="0.01" required>
+        <input type="number" name="price" id="price" step="0.01" value="{{ form.get('price', '') }}" required>
+        {% if errors.get('price') %}<p class="field-error">{{ errors['price'] }}</p>{% endif %}
 
         <label for="description">Description:</label>
-        <textarea name="description" id="description" required></textarea>
+        <textarea name="description" id="description" required>{{ form.get('description', '') }}</textarea>
+        {% if errors.get('description') %}<p class="field-error">{{ errors['description'] }}</p>{% endif %}
 
         <label for="stock">Stock Quantity:</label>
-        <input type="number" name="stock" id="stock" required>
+        <input type="number" name="stock" id="stock" value="{{ form.get('stock', '') }}" required>
+        {% if errors.get('stock') %}<p class="field-error">{{ errors['stock'] }}</p>{% endif %}
 
         <label for="category">Category:</label>
         <select name="category" id="category" required>
             {% for category in categories %}
-                <option value="{{ category[0] }}">{{ category[1] }}</option>
+                <option value="{{ category[0] }}" {% if form.get('category', '')|string == category[0]|string %}selected{% endif %}>{{ category[1] }}</option>
             {% endfor %}
         </select>
+        {% if errors.get('category') %}<p class="field-error">{{ errors['category'] }}</p>{% endif %}
 
         <label for="image">Upload Product Image:</label>
         <input type="file" name="image" id="image" accept="image/*">
