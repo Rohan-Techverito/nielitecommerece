@@ -1,0 +1,11 @@
+{% if notificationsSignedIn %}
+<li class="nav-item notification-nav-item">
+    <button id="notification-bell" class="notification-bell" data-unread="{{ unread_notification_count }}" aria-label="Notifications">
+        <i class="fas fa-bell"></i>
+        {% if unread_notification_count > 0 %}
+        <span class="notification-badge" id="notification-badge">{{ unread_notification_count }}</span>
+        {% endif %}
+    </button>
+    <div id="notification-panel" class="notification-panel" hidden></div>
+</li>
+{% endif %}

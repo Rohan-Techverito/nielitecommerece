@@ -1,0 +1,112 @@
+/* Notification bell, badge and dropdown panel */
+.notification-nav-item {
+    position: relative;
+}
+
+.notification-bell {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 8px 10px;
+    cursor: pointer;
+    color: #333333;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.notification-bell:hover,
+.notification-bell:focus {
+    color: #007bff;
+    outline: none;
+}
+
+.notification-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 50%;
+    background: #dc3545;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 18px;
+    text-align: center;
+}
+
+.notification-panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 320px;
+    max-height: 360px;
+    overflow-y: auto;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    z-index: 2000;
+    text-align: left;
+}
+
+.notification-panel[hidden] {
+    display: none;
+}
+
+.notification-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.notification-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 15px;
+    border-bottom: 1px solid #eeeeee;
+    font-size: 14px;
+    color: #444444;
+}
+
+.notification-item:last-child {
+    border-bottom: none;
+}
+
+.notification-item.unread {
+    background: #eef5ff;
+    font-weight: bold;
+    color: #212529;
+}
+
+.notification-message {
+    display: block;
+    word-wrap: break-word;
+}
+
+.notification-time {
+    display: block;
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.notifications-empty {
+    margin: 0;
+    padding: 20px 15px;
+    text-align: center;
+    color: #6c757d;
+    font-size: 14px;
+}
+
+@media (max-width: 768px) {
+    .notification-panel {
+        right: auto;
+        left: 0;
+        width: 280px;
+    }
+}

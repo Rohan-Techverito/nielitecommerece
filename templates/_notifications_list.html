@@ -1,0 +1,12 @@
+{% if notifications %}
+<ul class="notification-list">
+    {% for row in notifications %}
+    <li class="notification-item{% if not row[4] %} unread{% endif %}" data-notification-id="{{ row[0] }}">
+        <span class="notification-message">{{ row[2] }}</span>
+        <span class="notification-time">{{ row[3] }}</span>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="notifications-empty">You have no notifications yet.</p>
+{% endif %}
