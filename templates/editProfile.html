@@ -6,6 +6,7 @@
     <title>Edit Profile</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/editProfile.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/topStyle.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/profilePhoto.css') }}">
     <script>
         function toggleDropdown() {
             document.querySelector(".dropdown-content").classList.toggle("show");
@@ -143,32 +144,6 @@
 
         .display input[type="submit"]:hover {
             background: #0056b3;
-        }
-
-        .profile-photo {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-
-        .profile-avatar {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            object-fit: cover;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: #007bff;
-            color: white;
-            font-size: 2.5rem;
-            font-weight: bold;
-            overflow: hidden;
-            margin-bottom: 10px;
-        }
-
-        .photo-error {
-            color: #dc3545;
-            font-weight: bold;
         }
 
         /* Responsive Design */

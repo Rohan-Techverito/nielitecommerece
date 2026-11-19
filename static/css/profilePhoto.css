@@ -1,0 +1,29 @@
+/* Shared avatar styles for the profile page and the edit-profile page.
+   Both pages render the same fixed 120px circular area: the photo is cropped
+   with object-fit, so it is never stretched, squashed or rotated. */
+
+.profile-photo {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.profile-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 10px;
+    border-radius: 50%;
+    object-fit: cover;
+    overflow: hidden;
+    background: #007bff;
+    color: #ffffff;
+    font-size: 2.5rem;
+    font-weight: bold;
+}
+
+.photo-error {
+    color: #dc3545;
+    font-weight: bold;
+}

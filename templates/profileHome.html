@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Profile Home</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/topStyle.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/profilePhoto.css') }}">
     <style>
         /* Reset styles */
         * {
@@ -110,6 +111,13 @@
 </div>
 
 <div class="display">
+    <div class="profile-photo">
+        {% if profile_photo_path %}
+            <img src="{{ url_for('static', filename=profile_photo_path) }}" alt="Profile photo" class="profile-avatar">
+        {% else %}
+            <div class="profile-avatar">{{ profile_initials }}</div>
+        {% endif %}
+    </div>
     <a href="/account/profile/edit">Edit Profile</a>
     <a href="/account/profile/changePassword">Change Password</a>
 </div>

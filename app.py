@@ -201,12 +201,30 @@ def displayCategory():
     data = parse(data)
     return render_template('displayCategory.html', data=data, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, categoryName=categoryName)
 
+def _profile_avatar_context(email: str) -> Tuple[Optional[str], str]:
+    """Return the profile page avatar: the public photo path (or None) and the initials.
+
+    A NULL profile_photo, or one whose file is no longer on disk, yields None for
+    the path so the template falls back to the initials avatar instead of a
+    broken image.
+    """
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute('SELECT profile_photo, firstName, lastName FROM users WHERE email = ?', (email,))
+        result = cur.fetchone()
+    if not result:
+        return (None, '?')
+    profile_photo, first_name, last_name = result
+    return (photo_public_path(profile_photo), initials(first_name, last_name))
+
 @app.route("/account/profile")
 def profileHome():
     if 'email' not in session:
         return redirect(url_for('root'))
     loggedIn, firstName, noOfItems = getLoginDetails()
-    return render_template("profileHome.html", loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
+    profile_photo_path, profile_initials = _profile_avatar_context(session['email'])
+    return render_template("profileHome.html", loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems,
+                           profile_photo_path=profile_photo_path, profile_initials=profile_initials)
 
 def _render_edit_profile(photo_error=None):
     loggedIn, firstName, noOfItems = getLoginDetails()
