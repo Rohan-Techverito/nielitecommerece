@@ -3,3 +3,5 @@ Werkzeug==2.3.7
 requests==2.31.0
 pytz==2023.3
 gunicorn
+Pillow==10.4.0
+pytest==8.2.2
