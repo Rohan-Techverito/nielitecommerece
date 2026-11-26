@@ -23,6 +23,18 @@ conn.execute('''CREATE TABLE IF NOT EXISTS wishlist (
     FOREIGN KEY(productId) REFERENCES products(productId)
 )''')
 
+# Create notifications table only if it doesn't exist
+conn.execute('''CREATE TABLE IF NOT EXISTS notifications (
+    notificationId INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL,
+    message TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    isRead INTEGER NOT NULL DEFAULT 0
+)''')
+
+conn.execute('''CREATE INDEX IF NOT EXISTS idx_notifications_user_read
+    ON notifications (userId, isRead, createdAt)''')
+
 conn.commit()
 conn.close()
 

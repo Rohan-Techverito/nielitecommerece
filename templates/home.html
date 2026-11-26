@@ -66,6 +66,7 @@
             <li class="nav-item"><a class="nav-link" href="/account/profile"><i class="fas fa-user"></i> Your Profile</a></li>
             <li class="nav-item"><a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Sign Out</a></li>
           {% endif %}
+          <li class="nav-item notification-nav-item">{% include '_notification_bell.html' %}</li>
           <li class="nav-item"><a class="nav-link" href="/cart"><i class="fas fa-shopping-cart"></i> Cart ({{ noOfItems }})</a></li>
           <li class="nav-item"><a class="nav-link" href="{{ url_for('wishlist') }}"><i class="fas fa-heart"></i> Wishlist</a></li>
         </ul>
