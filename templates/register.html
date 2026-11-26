@@ -91,86 +91,94 @@
         .login-link:hover {
             text-decoration: underline;
         }
-    </style>
 
-    <script>
-        function validate() {
-            var password = document.getElementById("password").value;
-            var cpassword = document.getElementById("cpassword").value;
-            if (password !== cpassword) {
-                alert("Passwords do not match!");
-                return false;
-            }
-            return true;
+        .error {
+            color: red;
+            font-size: 13px;
+            text-align: left;
+            margin-top: 4px;
         }
-    </script>
+    </style>
 </head>
 <body>
 
     <div class="container">
         <h2>Create an Account</h2>
-        <form action="/register" method="POST" onsubmit="return validate()">
+        <form action="/register" method="POST" novalidate>
             
             <div class="input-group">
                 <label>Email:</label>
-                <input type="email" name="email" required>
+                <input type="text" name="email" inputmode="email" value="{{ values.get('email', '') }}">
+                {% if errors.get('email') %}<p class="error">{{ errors.get('email') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Password:</label>
-                <input type="password" name="password" id="password" required>
+                <input type="password" name="password" id="password">
+                {% if errors.get('password') %}<p class="error">{{ errors.get('password') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Confirm Password:</label>
-                <input type="password" name="cpassword" id="cpassword" required>
+                <input type="password" name="cpassword" id="cpassword">
+                {% if errors.get('cpassword') %}<p class="error">{{ errors.get('cpassword') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>First Name:</label>
-                <input type="text" name="firstName" required>
+                <input type="text" name="firstName" value="{{ values.get('firstName', '') }}">
+                {% if errors.get('firstName') %}<p class="error">{{ errors.get('firstName') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Last Name:</label>
-                <input type="text" name="lastName">
+                <input type="text" name="lastName" value="{{ values.get('lastName', '') }}">
+                {% if errors.get('lastName') %}<p class="error">{{ errors.get('lastName') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Address Line 1:</label>
-                <input type="text" name="address1" required>
+                <input type="text" name="address1" value="{{ values.get('address1', '') }}">
+                {% if errors.get('address1') %}<p class="error">{{ errors.get('address1') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Address Line 2:</label>
-                <input type="text" name="address2">
+                <input type="text" name="address2" value="{{ values.get('address2', '') }}">
+                {% if errors.get('address2') %}<p class="error">{{ errors.get('address2') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Zipcode:</label>
-                <input type="text" name="zipcode" required>
+                <input type="text" name="zipcode" inputmode="numeric" value="{{ values.get('zipcode', '') }}">
+                {% if errors.get('zipcode') %}<p class="error">{{ errors.get('zipcode') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>City:</label>
-                <input type="text" name="city" required>
+                <input type="text" name="city" value="{{ values.get('city', '') }}">
+                {% if errors.get('city') %}<p class="error">{{ errors.get('city') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>State:</label>
-                <input type="text" name="state" required>
+                <input type="text" name="state" value="{{ values.get('state', '') }}">
+                {% if errors.get('state') %}<p class="error">{{ errors.get('state') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Country:</label>
-                <input type="text" name="country" required>
+                <input type="text" name="country" value="{{ values.get('country', '') }}">
+                {% if errors.get('country') %}<p class="error">{{ errors.get('country') }}</p>{% endif %}
             </div>
 
             <div class="input-group">
                 <label>Phone Number:</label>
-                <input type="text" name="phone" required>
+                <input type="text" name="phone" inputmode="numeric" value="{{ values.get('phone', '') }}">
+                {% if errors.get('phone') %}<p class="error">{{ errors.get('phone') }}</p>{% endif %}
             </div>
 
+            {% if errors.get('form') %}<p class="error">{{ errors.get('form') }}</p>{% endif %}
             <button type="submit" class="btn">Register</button>
         </form>
         <a href="/loginForm" class="login-link">Already have an account? Login here</a>
