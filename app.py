@@ -5,6 +5,20 @@ import requests
 from datetime import datetime
 import pytz
 
+from validators import (
+    validate_category,
+    validate_confirmation,
+    validate_email,
+    validate_name,
+    validate_optional_text,
+    validate_password,
+    validate_phone,
+    validate_price,
+    validate_required_text,
+    validate_stock,
+    validate_zipcode,
+)
+
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this-in-production'  # Change this in production
 UPLOAD_FOLDER = 'static/uploads'
@@ -17,6 +31,62 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Check if user is admin
 def is_admin():
     return 'email' in session and session['email'] == 'admin@nielit.gov.in'
+
+
+def _product_form_values(form):
+    """Return the submitted product values used for validation and display."""
+    return {
+        'name': (form.get('name') or '').strip(),
+        'price': (form.get('price') or '').strip(),
+        'description': form.get('description') or '',
+        'stock': (form.get('stock') or '').strip(),
+        'category': (form.get('category') or '').strip(),
+    }
+
+
+def _validate_product_form(form, categories):
+    """Validate an add/edit product submission.
+
+    Returns ``(errors, values, cleaned)``.  ``values`` keeps what the person
+    typed so the form can be repopulated, while ``cleaned`` contains the typed
+    values converted for use in SQL.
+    """
+    values = _product_form_values(form)
+    errors = {}
+
+    name, error = validate_name(values['name'], 'Product name')
+    if error:
+        errors['name'] = error
+
+    price, error = validate_price(values['price'], 'Price')
+    if error:
+        errors['price'] = error
+
+    description, error = validate_optional_text(values['description'], 'Description')
+    if error:
+        errors['description'] = error
+
+    stock, error = validate_stock(values['stock'], 'Stock')
+    if error:
+        errors['stock'] = error
+
+    category_id, error = validate_category(values['category'], categories)
+    if error:
+        errors['category'] = error
+
+    cleaned = {
+        'name': name,
+        'price': price,
+        'description': description,
+        'stock': stock,
+        'categoryId': category_id,
+    }
+    return errors, values, cleaned
+
+
+def _fetch_categories(cur):
+    cur.execute('SELECT categoryId, name FROM categories')
+    return cur.fetchall()
 
 # Home page
 @app.route("/")
@@ -41,12 +111,15 @@ def getLoginDetails():
             noOfItems = 0
         else:
             loggedIn = True
-            cur.execute("SELECT userId, firstName FROM users WHERE email = ?", (session['email'],))
+            cur.execute("SELECT userId, firstName FROM users WHERE LOWER(email) = LOWER(?)", (session['email'],))
             result = cur.fetchone()
             if result:
                 userId, firstName = result
-                cur.execute("SELECT count(productId) FROM kart WHERE userId = ?", (userId,))
-                noOfItems = cur.fetchone()[0]
+                try:
+                    cur.execute("SELECT count(productId) FROM kart WHERE userId = ?", (userId,))
+                    noOfItems = cur.fetchone()[0]
+                except sqlite3.Error:
+                    noOfItems = 0
             else:
                 loggedIn = False
                 firstName = ''
@@ -69,41 +142,51 @@ def add_product():
     if not is_admin():
         return redirect(url_for('root'))
 
-    if request.method == "POST":
-        name = request.form['name']
-        price = float(request.form['price'])
-        description = request.form['description']
-        stock = int(request.form['stock'])
-        categoryId = int(request.form['category'])
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        categories = _fetch_categories(cur)
 
-        # Upload image
-        image = request.files['image']
+    if request.method == "POST":
+        errors, values, cleaned = _validate_product_form(request.form, categories)
+        if errors:
+            return render_template('add_product.html', categories=categories, errors=errors, values=values)
+
+        # Upload image only after the submitted values have passed validation.
+        image = request.files.get('image')
+        imagename = "product-default.png"  # Fallback image
+        saved_image_path = None
         if image and allowed_file(image.filename):
             filename = secure_filename(image.filename)
-            image.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            imagename = filename
-        else:
-            imagename = "product-default.png"  # Fallback image
+            image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            try:
+                os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+                image.save(image_path)
+                imagename = filename
+                saved_image_path = image_path
+            except Exception:
+                errors['form'] = "Something went wrong while saving the image. Please try again."
+                return render_template('add_product.html', categories=categories, errors=errors, values=values)
 
         with sqlite3.connect('database.db') as conn:
             try:
                 cur = conn.cursor()
                 cur.execute('''INSERT INTO products (name, price, description, image, stock, categoryId) 
-                               VALUES (?, ?, ?, ?, ?, ?)''', (name, price, description, imagename, stock, categoryId))
+                               VALUES (?, ?, ?, ?, ?, ?)''', (cleaned['name'], cleaned['price'], cleaned['description'], imagename, cleaned['stock'], cleaned['categoryId']))
                 conn.commit()
             except Exception as e:
                 conn.rollback()
                 print(f"Error adding product: {e}")
+                if saved_image_path and os.path.exists(saved_image_path):
+                    try:
+                        os.remove(saved_image_path)
+                    except OSError:
+                        pass
+                errors['form'] = "Could not add the product. Please try again."
+                return render_template('add_product.html', categories=categories, errors=errors, values=values)
 
         return redirect(url_for('admin_dashboard'))
 
-    # Fetch categories for dropdown
-    with sqlite3.connect('database.db') as conn:
-        cur = conn.cursor()
-        cur.execute('SELECT categoryId, name FROM categories')
-        categories = cur.fetchall()
-
-    return render_template('add_product.html', categories=categories)
+    return render_template('add_product.html', categories=categories, errors={}, values={})
 
 # Delete product (Admin only)
 @app.route("/admin/delete/<int:productId>")
@@ -124,42 +207,63 @@ def edit_product(productId):
     with sqlite3.connect('database.db') as conn:
         cur = conn.cursor()
 
-        if request.method == "POST":
-            name = request.form['name']
-            price = float(request.form['price'])
-            description = request.form['description']
-            stock = int(request.form['stock'])
-            categoryId = int(request.form['category'])
-
-            # Handle image update
-            image = request.files['image']
-            if image and image.filename != "":  # If a new image is uploaded
-                filename = secure_filename(image.filename)
-                image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                image.save(image_path)
-
-                cur.execute('''UPDATE products 
-                               SET name=?, price=?, description=?, image=?, stock=?, categoryId=? 
-                               WHERE productId=?''',
-                            (name, price, description, filename, stock, categoryId, productId))
-            else:
-                cur.execute('''UPDATE products 
-                               SET name=?, price=?, description=?, stock=?, categoryId=? 
-                               WHERE productId=?''',
-                            (name, price, description, stock, categoryId, productId))
-
-            conn.commit()
-            return redirect(url_for('admin_dashboard'))
-
         # Fetch product details
         cur.execute("SELECT * FROM products WHERE productId = ?", (productId,))
         product = cur.fetchone()
 
         # Fetch categories for dropdown
-        cur.execute('SELECT categoryId, name FROM categories')
-        categories = cur.fetchall()
+        categories = _fetch_categories(cur)
 
-    return render_template("edit_product.html", product=product, categories=categories)
+        if product is None:
+            return redirect(url_for('admin_dashboard'))
+
+        if request.method == "POST":
+            errors, values, cleaned = _validate_product_form(request.form, categories)
+            if errors:
+                return render_template("edit_product.html", product=product, categories=categories, errors=errors, values=values)
+
+            # Handle image update only after the submitted values are valid.
+            image = request.files.get('image')
+            filename = None
+            saved_image_path = None
+            if image and image.filename != "":  # If a new image is uploaded
+                filename = secure_filename(image.filename)
+                image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                try:
+                    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+                    image.save(image_path)
+                    saved_image_path = image_path
+                except Exception:
+                    errors['form'] = "Something went wrong while saving the image. Please try again."
+                    return render_template("edit_product.html", product=product, categories=categories, errors=errors, values=values)
+
+            try:
+                if filename is not None:
+                    cur.execute('''UPDATE products 
+                                   SET name=?, price=?, description=?, image=?, stock=?, categoryId=? 
+                                   WHERE productId=?''',
+                                (cleaned['name'], cleaned['price'], cleaned['description'], filename, cleaned['stock'], cleaned['categoryId'], productId))
+                else:
+                    cur.execute('''UPDATE products 
+                                   SET name=?, price=?, description=?, stock=?, categoryId=? 
+                                   WHERE productId=?''',
+                                (cleaned['name'], cleaned['price'], cleaned['description'], cleaned['stock'], cleaned['categoryId'], productId))
+
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                print(f"Error updating product: {e}")
+                if saved_image_path and os.path.exists(saved_image_path):
+                    try:
+                        os.remove(saved_image_path)
+                    except OSError:
+                        pass
+                errors['form'] = "Could not save the product. Please try again."
+                return render_template("edit_product.html", product=product, categories=categories, errors=errors, values=values)
+
+            return redirect(url_for('admin_dashboard'))
+
+    return render_template("edit_product.html", product=product, categories=categories, errors={}, values={})
 
 # Display all items of a category
 @app.route("/displayCategory")
@@ -192,47 +296,70 @@ def profileHome():
     loggedIn, firstName, noOfItems = getLoginDetails()
     return render_template("profileHome.html", loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
 
-@app.route("/account/profile/edit")
+@app.route("/account/profile/edit", methods=["GET", "POST"])
 def editProfile():
+    if request.method == "POST":
+        return updateProfile()
     if 'email' not in session:
         return redirect(url_for('root'))
     loggedIn, firstName, noOfItems = getLoginDetails()
     with sqlite3.connect('database.db') as conn:
         cur = conn.cursor()
-        cur.execute("SELECT userId, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone FROM users WHERE email = ?", (session['email'],))
+        cur.execute("SELECT userId, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone FROM users WHERE LOWER(email) = LOWER(?)", (session['email'],))
         profileData = cur.fetchone()
-    return render_template("editProfile.html", profileData=profileData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems)
+    return render_template("editProfile.html", profileData=profileData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, errors={}, values={})
 
 @app.route("/account/profile/changePassword", methods=["GET", "POST"])
 def changePassword():
     if 'email' not in session:
         return redirect(url_for('loginForm'))
     if request.method == "POST":
-        oldPassword = request.form['oldpassword']
-        oldPassword = hashlib.md5(oldPassword.encode()).hexdigest()
-        newPassword = request.form['newpassword']
-        newPassword = hashlib.md5(newPassword.encode()).hexdigest()
-        with sqlite3.connect('database.db') as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT userId, password FROM users WHERE email = ?", (session['email'],))
-            result = cur.fetchone()
-            if result:
-                userId, password = result
-                if password == oldPassword:
-                    try:
-                        cur.execute("UPDATE users SET password = ? WHERE userId = ?", (newPassword, userId))
+        oldPasswordValue = request.form.get('oldpassword') or ''
+        newPasswordValue = request.form.get('newpassword') or ''
+        confirmPasswordValue = request.form.get('cpassword') or ''
+        errors = {}
+
+        if not oldPasswordValue:
+            errors['oldpassword'] = "Current password is required."
+
+        newPassword, error = validate_password(newPasswordValue)
+        if error:
+            errors['newpassword'] = error
+
+        if not confirmPasswordValue:
+            errors['cpassword'] = "Please confirm the new password."
+        elif confirmPasswordValue != newPasswordValue:
+            errors['cpassword'] = "Passwords do not match."
+
+        try:
+            with sqlite3.connect('database.db') as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT userId, password FROM users WHERE LOWER(email) = LOWER(?)", (session['email'],))
+                result = cur.fetchone()
+                if not result:
+                    errors['form'] = "We could not find your account. Please sign in again."
+                else:
+                    userId, password = result
+                    oldPassword = hashlib.md5(oldPasswordValue.encode()).hexdigest()
+                    if oldPasswordValue and password != oldPassword:
+                        errors['oldpassword'] = "Current password is incorrect."
+
+                    if newPassword and hashlib.md5(newPassword.encode()).hexdigest() == password:
+                        errors['newpassword'] = "New password must be different from the current password."
+
+                    if not errors:
+                        cur.execute("UPDATE users SET password = ? WHERE userId = ?",
+                                    (hashlib.md5(newPassword.encode()).hexdigest(), userId))
                         conn.commit()
                         msg = "Changed successfully"
-                    except:
-                        conn.rollback()
-                        msg = "Failed"
-                else:
-                    msg = "Wrong password"
-            else:
-                msg = "User not found"
-        return render_template("changePassword.html", msg=msg)
+        except Exception:
+            errors['form'] = "Unable to change your password right now. Please try again."
+
+        if errors:
+            return render_template("changePassword.html", errors=errors)
+        return render_template("changePassword.html", msg=msg, errors={})
     else:
-        return render_template("changePassword.html")
+        return render_template("changePassword.html", errors={})
 
 @app.route("/updateProfile", methods=["GET", "POST"])
 def updateProfile():
@@ -240,30 +367,106 @@ def updateProfile():
         return redirect(url_for('root'))
     
     if request.method == 'POST':
-        email = request.form['email']
-        firstName = request.form['firstName']
-        lastName = request.form['lastName']
-        address1 = request.form['address1']
-        address2 = request.form['address2']
-        zipcode = request.form['zipcode']
-        city = request.form['city']
-        state = request.form['state']
-        country = request.form['country']
-        phone = request.form['phone']
-        
-        with sqlite3.connect('database.db') as con:
-            try:
+        values = {
+            'email': (request.form.get('email') or '').strip(),
+            'firstName': (request.form.get('firstName') or '').strip(),
+            'lastName': (request.form.get('lastName') or '').strip(),
+            'address1': request.form.get('address1') or '',
+            'address2': request.form.get('address2') or '',
+            'zipcode': (request.form.get('zipcode') or '').strip(),
+            'city': (request.form.get('city') or '').strip(),
+            'state': (request.form.get('state') or '').strip(),
+            'country': (request.form.get('country') or '').strip(),
+            'phone': (request.form.get('phone') or '').strip(),
+        }
+        errors = {}
+
+        email, error = validate_email(values['email'])
+        if error:
+            errors['email'] = error
+
+        firstName, error = validate_name(values['firstName'], 'First name')
+        if error:
+            errors['firstName'] = error
+
+        lastName, error = validate_name(values['lastName'], 'Last name')
+        if error:
+            errors['lastName'] = error
+
+        address1, error = validate_optional_text(values['address1'], 'Address line 1')
+        if error:
+            errors['address1'] = error
+
+        address2, error = validate_optional_text(values['address2'], 'Address line 2')
+        if error:
+            errors['address2'] = error
+
+        zipcode, error = validate_zipcode(values['zipcode'])
+        if error:
+            errors['zipcode'] = error
+
+        city, error = validate_required_text(values['city'], 'City')
+        if error:
+            errors['city'] = error
+
+        state, error = validate_required_text(values['state'], 'State')
+        if error:
+            errors['state'] = error
+
+        country, error = validate_required_text(values['country'], 'Country')
+        if error:
+            errors['country'] = error
+
+        phone, error = validate_phone(values['phone'])
+        if error:
+            errors['phone'] = error
+
+        if 'email' not in errors:
+            with sqlite3.connect('database.db') as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT userId FROM users WHERE LOWER(email) = LOWER(?)", (session['email'],))
+                currentUser = cur.fetchone()
+                if currentUser:
+                    cur.execute("SELECT userId FROM users WHERE LOWER(email) = LOWER(?) AND userId != ?", (email, currentUser[0]))
+                    if cur.fetchone():
+                        errors['email'] = "This email address belongs to another account."
+                else:
+                    cur.execute("SELECT userId FROM users WHERE LOWER(email) = LOWER(?)", (email,))
+                    if cur.fetchone():
+                        errors['email'] = "This email address belongs to another account."
+
+        if errors:
+            loggedIn, navFirstName, noOfItems = getLoginDetails()
+            with sqlite3.connect('database.db') as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT userId, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone FROM users WHERE LOWER(email) = LOWER(?)", (session['email'],))
+                profileData = cur.fetchone()
+            return render_template("editProfile.html", profileData=profileData, loggedIn=loggedIn, firstName=navFirstName, noOfItems=noOfItems, errors=errors, values=values)
+
+        try:
+            with sqlite3.connect('database.db') as con:
                 cur = con.cursor()
-                cur.execute('UPDATE users SET firstName = ?, lastName = ?, address1 = ?, address2 = ?, zipcode = ?, city = ?, state = ?, country = ?, phone = ? WHERE email = ?', 
+                cur.execute('UPDATE users SET firstName = ?, lastName = ?, address1 = ?, address2 = ?, zipcode = ?, city = ?, state = ?, country = ?, phone = ? WHERE LOWER(email) = LOWER(?)', 
                            (firstName, lastName, address1, address2, zipcode, city, state, country, phone, session['email']))
                 con.commit()
-                msg = "Saved Successfully"
-            except Exception as e:
-                con.rollback()
-                msg = "Error occurred"
-                print(f"Error updating profile: {e}")
-        
+        except Exception as e:
+            print(f"Error updating profile: {e}")
+            errors['form'] = "Could not save your profile right now. Please try again."
+            loggedIn, navFirstName, noOfItems = getLoginDetails()
+            with sqlite3.connect('database.db') as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT userId, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone FROM users WHERE LOWER(email) = LOWER(?)", (session['email'],))
+                profileData = cur.fetchone()
+            return render_template("editProfile.html", profileData=profileData, loggedIn=loggedIn, firstName=navFirstName, noOfItems=noOfItems, errors=errors, values=values)
+
         return redirect(url_for('editProfile'))
+
+    loggedIn, firstName, noOfItems = getLoginDetails()
+    with sqlite3.connect('database.db') as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT userId, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone FROM users WHERE LOWER(email) = LOWER(?)", (session['email'],))
+        profileData = cur.fetchone()
+    return render_template("editProfile.html", profileData=profileData, loggedIn=loggedIn, firstName=firstName, noOfItems=noOfItems, errors={}, values={})
 
 @app.route("/loginForm")
 def loginForm():
@@ -579,18 +782,81 @@ def is_valid(email, password):
 @app.route("/register", methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        # Parse form data    
-        password = request.form['password']
-        email = request.form['email']
-        firstName = request.form['firstName']
-        lastName = request.form['lastName']
-        address1 = request.form['address1']
-        address2 = request.form['address2']
-        zipcode = request.form['zipcode']
-        city = request.form['city']
-        state = request.form['state']
-        country = request.form['country']
-        phone = request.form['phone']
+        # Collect values defensively so a direct POST without every field is
+        # reported next to the field instead of raising an exception.
+        values = {
+            'email': (request.form.get('email') or '').strip(),
+            'firstName': (request.form.get('firstName') or '').strip(),
+            'lastName': (request.form.get('lastName') or '').strip(),
+            'address1': request.form.get('address1') or '',
+            'address2': request.form.get('address2') or '',
+            'zipcode': (request.form.get('zipcode') or '').strip(),
+            'city': (request.form.get('city') or '').strip(),
+            'state': (request.form.get('state') or '').strip(),
+            'country': (request.form.get('country') or '').strip(),
+            'phone': (request.form.get('phone') or '').strip(),
+        }
+        passwordValue = request.form.get('password') or ''
+        confirmPasswordValue = request.form.get('cpassword') or ''
+        errors = {}
+
+        email, error = validate_email(values['email'])
+        if error:
+            errors['email'] = error
+
+        firstName, error = validate_name(values['firstName'], 'First name')
+        if error:
+            errors['firstName'] = error
+
+        lastName, error = validate_name(values['lastName'], 'Last name')
+        if error:
+            errors['lastName'] = error
+
+        address1, error = validate_optional_text(values['address1'], 'Address line 1')
+        if error:
+            errors['address1'] = error
+
+        address2, error = validate_optional_text(values['address2'], 'Address line 2')
+        if error:
+            errors['address2'] = error
+
+        zipcode, error = validate_zipcode(values['zipcode'])
+        if error:
+            errors['zipcode'] = error
+
+        city, error = validate_required_text(values['city'], 'City')
+        if error:
+            errors['city'] = error
+
+        state, error = validate_required_text(values['state'], 'State')
+        if error:
+            errors['state'] = error
+
+        country, error = validate_required_text(values['country'], 'Country')
+        if error:
+            errors['country'] = error
+
+        phone, error = validate_phone(values['phone'])
+        if error:
+            errors['phone'] = error
+
+        password, error = validate_password(passwordValue)
+        if error:
+            errors['password'] = error
+        else:
+            _, error = validate_confirmation(confirmPasswordValue, password)
+            if error:
+                errors['cpassword'] = error
+
+        if 'email' not in errors:
+            with sqlite3.connect('database.db') as con:
+                cur = con.cursor()
+                cur.execute('SELECT userId FROM users WHERE LOWER(email) = LOWER(?)', (email,))
+                if cur.fetchone():
+                    errors['email'] = "An account with this email already exists."
+
+        if errors:
+            return render_template("register.html", errors=errors, values=values)
 
         with sqlite3.connect('database.db') as con:
             try:
@@ -598,17 +864,19 @@ def register():
                 cur.execute('INSERT INTO users (password, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
                            (hashlib.md5(password.encode()).hexdigest(), email, firstName, lastName, address1, address2, zipcode, city, state, country, phone))
                 con.commit()
-                msg = "Registered Successfully"
             except Exception as e:
                 con.rollback()
-                msg = "Error occurred"
                 print(f"Registration error: {e}")
-        
-        return render_template("login.html", error=msg)
+                errors['form'] = "Could not create your account right now. Please try again."
+                return render_template("register.html", errors=errors, values=values)
+
+        return render_template("login.html", error="Registered Successfully")
+
+    return render_template("register.html", errors={}, values={})
 
 @app.route("/registerationForm")
 def registrationForm():
-    return render_template("register.html")
+    return render_template("register.html", errors={}, values={})
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS

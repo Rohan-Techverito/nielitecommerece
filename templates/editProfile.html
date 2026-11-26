@@ -145,6 +145,13 @@
             background: #0056b3;
         }
 
+        .error {
+            color: red;
+            font-size: 13px;
+            text-align: left;
+            margin-top: 4px;
+        }
+
         /* Responsive Design */
         @media (max-width: 600px) {
             #title {
@@ -202,17 +209,28 @@
 
 <div class="display">
     <h2>Edit Profile</h2>
-    <form action="/updateProfile" method="POST">
-        <p>Email:<input type="email" name="email" value="{{ profileData[1] }}" readonly></p>
-        <p>First Name:<input type="text" name="firstName" value="{{ profileData[2] }}"></p>
-        <p>Last Name:<input type="text" name="lastName" value="{{ profileData[3] }}"></p>
-        <p>Address 1:<input type="text" name="address1" value="{{ profileData[4] }}"></p>
-        <p>Address 2:<input type="text" name="address2" value="{{ profileData[5] }}"></p>
-        <p>Zip Code:<input type="text" name="zipcode" value="{{ profileData[6] }}"></p>
-        <p>City:<input type="text" name="city" value="{{ profileData[7] }}"></p>
-        <p>State:<input type="text" name="state" value="{{ profileData[8] }}"></p>
-        <p>Country:<input type="text" name="country" value="{{ profileData[9] }}"></p>
-        <p>Phone Number:<input type="text" name="phone" value="{{ profileData[10] }}"></p>
+    <form action="/updateProfile" method="POST" novalidate>
+        <p>Email:<input type="text" name="email" value="{{ values.get('email', profileData[1]) }}" readonly></p>
+        {% if errors.get('email') %}<p class="error">{{ errors.get('email') }}</p>{% endif %}
+        <p>First Name:<input type="text" name="firstName" value="{{ values.get('firstName', profileData[2]) }}"></p>
+        {% if errors.get('firstName') %}<p class="error">{{ errors.get('firstName') }}</p>{% endif %}
+        <p>Last Name:<input type="text" name="lastName" value="{{ values.get('lastName', profileData[3]) }}"></p>
+        {% if errors.get('lastName') %}<p class="error">{{ errors.get('lastName') }}</p>{% endif %}
+        <p>Address 1:<input type="text" name="address1" value="{{ values.get('address1', profileData[4]) }}"></p>
+        {% if errors.get('address1') %}<p class="error">{{ errors.get('address1') }}</p>{% endif %}
+        <p>Address 2:<input type="text" name="address2" value="{{ values.get('address2', profileData[5]) }}"></p>
+        {% if errors.get('address2') %}<p class="error">{{ errors.get('address2') }}</p>{% endif %}
+        <p>Zip Code:<input type="text" name="zipcode" inputmode="numeric" value="{{ values.get('zipcode', profileData[6]) }}"></p>
+        {% if errors.get('zipcode') %}<p class="error">{{ errors.get('zipcode') }}</p>{% endif %}
+        <p>City:<input type="text" name="city" value="{{ values.get('city', profileData[7]) }}"></p>
+        {% if errors.get('city') %}<p class="error">{{ errors.get('city') }}</p>{% endif %}
+        <p>State:<input type="text" name="state" value="{{ values.get('state', profileData[8]) }}"></p>
+        {% if errors.get('state') %}<p class="error">{{ errors.get('state') }}</p>{% endif %}
+        <p>Country:<input type="text" name="country" value="{{ values.get('country', profileData[9]) }}"></p>
+        {% if errors.get('country') %}<p class="error">{{ errors.get('country') }}</p>{% endif %}
+        <p>Phone Number:<input type="text" name="phone" inputmode="numeric" value="{{ values.get('phone', profileData[10]) }}"></p>
+        {% if errors.get('phone') %}<p class="error">{{ errors.get('phone') }}</p>{% endif %}
+        {% if errors.get('form') %}<p class="error">{{ errors.get('form') }}</p>{% endif %}
         <input type="submit" value="Save">
     </form>
 </div>
