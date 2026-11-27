@@ -1,6 +1,10 @@
+import os
 import sqlite3
 
-conn = sqlite3.connect('database.db')
+# Use the same database file as the app so tables are created where the app reads them.
+DATABASE = os.environ.get('NIELIT_DATABASE', 'database.db')
+
+conn = sqlite3.connect(DATABASE)
 
 # Create allorders table only if it doesn't exist
 conn.execute('''CREATE TABLE IF NOT EXISTS allorders (
