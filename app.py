@@ -10,19 +10,106 @@ app.secret_key = 'your-secret-key-change-this-in-production'  # Change this in p
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'jpeg', 'jpg', 'png', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# Database location; configurable so tests can point at a temporary database.
+app.config.setdefault('DATABASE', os.environ.get('NIELIT_DATABASE', 'database.db'))
+
+# Accounts treated as administrators
+ADMIN_EMAILS = ('admin@nielit.gov.in',)
 
 # Ensure upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+NOTIFICATIONS_TABLE_DDL = '''CREATE TABLE IF NOT EXISTS notifications (
+    notificationId INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId INTEGER NOT NULL,
+    message TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    isRead INTEGER NOT NULL DEFAULT 0
+)'''
+
+NOTIFICATIONS_INDEX_DDL = '''CREATE INDEX IF NOT EXISTS idx_notifications_user_read
+    ON notifications (userId, isRead, createdAt)'''
+
+# Open a connection to the configured database
+def connect_db():
+    return sqlite3.connect(app.config.get('DATABASE', 'database.db'))
+
+# Idempotently create the notifications table for existing databases
+def ensure_notifications_table():
+    try:
+        conn = connect_db()
+        try:
+            conn.execute(NOTIFICATIONS_TABLE_DDL)
+            conn.execute(NOTIFICATIONS_INDEX_DDL)
+            conn.commit()
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        print(f"Could not ensure notifications table: {e}")
+
+ensure_notifications_table()
+
 # Check if user is admin
 def is_admin():
-    return 'email' in session and session['email'] == 'admin@nielit.gov.in'
+    return 'email' in session and session['email'] in ADMIN_EMAILS
+
+# Return the signed-in user's details, or None when signed out or unknown
+def get_session_user(cur):
+    email = session.get('email')
+    if not email:
+        return None
+    cur.execute("SELECT userId, firstName FROM users WHERE email = ?", (email,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {'userId': row[0], 'firstName': row[1], 'email': email}
+
+# Count only the given user's unread notifications
+def get_unread_count(cur, userId):
+    if userId is None:
+        return 0
+    cur.execute("SELECT COUNT(*) FROM notifications WHERE userId = ? AND isRead = 0", (userId,))
+    row = cur.fetchone()
+    count = row[0] if row else 0
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        count = 0
+    return max(0, count)
+
+# Return the user ids of every configured administrator
+def get_admin_user_ids(cur):
+    if not ADMIN_EMAILS:
+        return []
+    placeholders = ','.join('?' for _ in ADMIN_EMAILS)
+    cur.execute(
+        "SELECT userId FROM users WHERE email IN ({})".format(placeholders),
+        list(ADMIN_EMAILS)
+    )
+    return [row[0] for row in cur.fetchall()]
+
+# Expose the signed-in user's unread count to every template
+@app.context_processor
+def inject_unread_notification_count():
+    try:
+        conn = connect_db()
+        try:
+            cur = conn.cursor()
+            user = get_session_user(cur)
+            if user is None:
+                return {'unreadNotificationCount': None}
+            return {'unreadNotificationCount': get_unread_count(cur, user['userId'])}
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        print(f"Could not load unread notification count: {e}")
+        return {'unreadNotificationCount': None}
 
 # Home page
 @app.route("/")
 def root():
     loggedIn, firstName, noOfItems = getLoginDetails()
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute('SELECT productId, name, price, description, image, stock FROM products')
         itemData = cur.fetchall()
@@ -33,7 +120,7 @@ def root():
 
 # Fetch user details if logged in
 def getLoginDetails():
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         if 'email' not in session:
             loggedIn = False
@@ -57,7 +144,7 @@ def getLoginDetails():
 def admin_dashboard():
     if not is_admin():
         return redirect(url_for('root'))
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute('SELECT * FROM products')
         products = cur.fetchall()
@@ -85,7 +172,7 @@ def add_product():
         else:
             imagename = "product-default.png"  # Fallback image
 
-        with sqlite3.connect('database.db') as conn:
+        with connect_db() as conn:
             try:
                 cur = conn.cursor()
                 cur.execute('''INSERT INTO products (name, price, description, image, stock, categoryId) 
@@ -98,7 +185,7 @@ def add_product():
         return redirect(url_for('admin_dashboard'))
 
     # Fetch categories for dropdown
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute('SELECT categoryId, name FROM categories')
         categories = cur.fetchall()
@@ -110,7 +197,7 @@ def add_product():
 def delete_product(productId):
     if not is_admin():
         return redirect(url_for('root'))
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM products WHERE productId = ?", (productId,))
         conn.commit()
@@ -121,7 +208,7 @@ def edit_product(productId):
     if not is_admin():
         return redirect(url_for('root'))
 
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
 
         if request.method == "POST":
@@ -170,7 +257,7 @@ def displayCategory():
     if not categoryId or not categoryId.isdigit():
         return redirect(url_for('root'))
     
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("""SELECT products.productId, products.name, products.price, products.image, categories.name 
                        FROM products, categories 
@@ -197,7 +284,7 @@ def editProfile():
     if 'email' not in session:
         return redirect(url_for('root'))
     loggedIn, firstName, noOfItems = getLoginDetails()
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT userId, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone FROM users WHERE email = ?", (session['email'],))
         profileData = cur.fetchone()
@@ -212,7 +299,7 @@ def changePassword():
         oldPassword = hashlib.md5(oldPassword.encode()).hexdigest()
         newPassword = request.form['newpassword']
         newPassword = hashlib.md5(newPassword.encode()).hexdigest()
-        with sqlite3.connect('database.db') as conn:
+        with connect_db() as conn:
             cur = conn.cursor()
             cur.execute("SELECT userId, password FROM users WHERE email = ?", (session['email'],))
             result = cur.fetchone()
@@ -251,7 +338,7 @@ def updateProfile():
         country = request.form['country']
         phone = request.form['phone']
         
-        with sqlite3.connect('database.db') as con:
+        with connect_db() as con:
             try:
                 cur = con.cursor()
                 cur.execute('UPDATE users SET firstName = ?, lastName = ?, address1 = ?, address2 = ?, zipcode = ?, city = ?, state = ?, country = ?, phone = ? WHERE email = ?', 
@@ -292,7 +379,7 @@ def productDescription():
     if not productId or not productId.isdigit():
         return redirect(url_for('root'))
     
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute('SELECT productId, name, price, description, image, stock FROM products WHERE productId = ?', (productId,))
         productData = cur.fetchone()
@@ -312,7 +399,7 @@ def addToCart():
             return redirect(url_for('root'))
         
         productId = int(productId)
-        with sqlite3.connect('database.db') as conn:
+        with connect_db() as conn:
             cur = conn.cursor()
             cur.execute("SELECT userId FROM users WHERE email = ?", (session['email'],))
             result = cur.fetchone()
@@ -333,7 +420,7 @@ def cart():
         return redirect(url_for('loginForm'))
     loggedIn, firstName, noOfItems = getLoginDetails()
     email = session['email']
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT userId FROM users WHERE email = ?", (email,))
         result = cur.fetchone()
@@ -361,7 +448,7 @@ def add_to_wishlist():
     if not product_id or not product_id.isdigit():
         return redirect(url_for('root'))
 
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT userId FROM users WHERE email = ?", (session['email'],))
         result = cur.fetchone()
@@ -384,7 +471,7 @@ def remove_from_wishlist():
     if not product_id:
         return redirect(url_for('wishlist'))
 
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT userId FROM users WHERE email = ?", (session['email'],))
         result = cur.fetchone()
@@ -400,7 +487,7 @@ def wishlist():
     if 'email' not in session:
         return redirect(url_for('loginForm'))
 
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT userId FROM users WHERE email = ?", (session['email'],))
         result = cur.fetchone()
@@ -422,7 +509,7 @@ def checkout():
         return redirect(url_for('loginForm'))
     loggedIn, firstName, noOfItems = getLoginDetails()
     email = session['email']
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT userId FROM users WHERE email = ?", (email,))
         result = cur.fetchone()
@@ -442,23 +529,23 @@ def checkout():
 def saveorder():
     if 'email' not in session:
         return redirect(url_for('loginForm'))
-    
-    email = session['email']
-    
+
+    ensure_notifications_table()
+
     # Get current IST timestamp
     ist = pytz.timezone('Asia/Kolkata')
     order_date = datetime.now(ist).strftime('%Y-%m-%d %H:%M:%S')
 
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
 
-        # Get user ID
-        cur.execute("SELECT userId FROM users WHERE email = ?", (email,))
-        result = cur.fetchone()
-        if not result:
+        # Get the signed-in shopper
+        user = get_session_user(cur)
+        if user is None:
             return redirect(url_for('root'))
-        
-        userId = result[0]
+
+        userId = user['userId']
+        firstName = user['firstName']
 
         # Fetch products from the user's cart
         cur.execute("""
@@ -471,11 +558,40 @@ def saveorder():
         
         cart_items = cur.fetchall()
 
-        # Save each cart item as an order
+        # Save each cart item as an order, collecting ids and the summed total
+        order_ids = []
+        order_total = 0.0
         for item in cart_items:
             productId, quantity, total_price = item
             cur.execute("INSERT INTO allorders (userId, productId, quantity, total_price, order_date) VALUES (?, ?, ?, ?, ?)",
                         (userId, productId, quantity, total_price, order_date))
+            order_ids.append(cur.lastrowid)
+            try:
+                order_total += float(total_price or 0)
+            except (TypeError, ValueError):
+                pass
+
+        # Notify the shopper and every admin only when orders were created
+        if order_ids:
+            order_references = ', '.join('#{}'.format(order_id) for order_id in order_ids)
+            if len(order_ids) == 1:
+                shopper_message = "Your order {} was placed successfully. Total paid: Rs {:.2f}".format(
+                    order_references, order_total)
+            else:
+                shopper_message = "Your orders {} were placed successfully. Total paid: Rs {:.2f}".format(
+                    order_references, order_total)
+            cur.execute(
+                "INSERT INTO notifications (userId, message, createdAt, isRead) VALUES (?, ?, ?, 0)",
+                (userId, shopper_message, order_date)
+            )
+
+            admin_message = "New order from {}. Order total: Rs {:.2f}".format(
+                firstName or user['email'], order_total)
+            for admin_user_id in get_admin_user_ids(cur):
+                cur.execute(
+                    "INSERT INTO notifications (userId, message, createdAt, isRead) VALUES (?, ?, ?, 0)",
+                    (admin_user_id, admin_message, order_date)
+                )
 
         # Clear the cart
         cur.execute("DELETE FROM kart WHERE userId = ?", (userId,))
@@ -484,12 +600,141 @@ def saveorder():
 
     return render_template("order_confirmation.html", order_date=order_date)
 
+def _extract_notification_ids():
+    """Return the requested notification ids, or None when none were supplied."""
+    payload = request.get_json(silent=True)
+    raw_ids = None
+    if isinstance(payload, dict):
+        for key in ('ids', 'notificationIds'):
+            if key in payload:
+                raw_ids = payload[key]
+                break
+    elif isinstance(payload, list):
+        raw_ids = payload
+
+    if raw_ids is None:
+        for key in ('ids', 'notificationIds'):
+            values = request.form.getlist(key) or request.args.getlist(key)
+            if values:
+                raw_ids = values
+                break
+
+    if raw_ids is None:
+        return None
+
+    if isinstance(raw_ids, str):
+        raw_ids = [part for part in raw_ids.split(',') if part.strip()]
+    elif not isinstance(raw_ids, (list, tuple, set)):
+        raw_ids = [raw_ids]
+
+    expanded_ids = []
+    for value in raw_ids:
+        if isinstance(value, str):
+            expanded_ids.extend(part for part in value.split(',') if part.strip())
+        else:
+            expanded_ids.append(value)
+
+    ids = []
+    for value in expanded_ids:
+        if isinstance(value, bool):
+            continue
+        try:
+            notification_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if notification_id > 0:
+            ids.append(notification_id)
+    return ids
+
+@app.route("/notifications")
+def notifications():
+    if 'email' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    ensure_notifications_table()
+    try:
+        conn = connect_db()
+        try:
+            cur = conn.cursor()
+            user = get_session_user(cur)
+            if user is None:
+                return jsonify({'error': 'Authentication required'}), 401
+            userId = user['userId']
+
+            cur.execute("""
+                SELECT notificationId, message, createdAt, isRead
+                FROM notifications
+                WHERE userId = ?
+                ORDER BY createdAt DESC, notificationId DESC
+                LIMIT 20
+            """, (userId,))
+            rows = cur.fetchall()
+            unread_count = get_unread_count(cur, userId)
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        print(f"Error loading notifications: {e}")
+        return jsonify({'error': 'Unable to load notifications'}), 500
+
+    notification_rows = [{
+        'id': row[0],
+        'message': row[1],
+        'createdAt': row[2],
+        'isRead': bool(row[3])
+    } for row in rows]
+
+    return jsonify({
+        'notifications': notification_rows,
+        'unreadCount': unread_count
+    })
+
+@app.route("/notifications/mark-read", methods=["POST"])
+def mark_notifications_read():
+    if 'email' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    ensure_notifications_table()
+    ids = _extract_notification_ids()
+    try:
+        conn = connect_db()
+        try:
+            cur = conn.cursor()
+            user = get_session_user(cur)
+            if user is None:
+                return jsonify({'error': 'Authentication required'}), 401
+            userId = user['userId']
+
+            if ids is None:
+                cur.execute(
+                    "UPDATE notifications SET isRead = 1 WHERE userId = ? AND isRead = 0",
+                    (userId,)
+                )
+            elif ids:
+                placeholders = ','.join('?' for _ in ids)
+                cur.execute(
+                    "UPDATE notifications SET isRead = 1 "
+                    "WHERE userId = ? AND isRead = 0 AND notificationId IN ({})".format(placeholders),
+                    [userId] + ids
+                )
+            conn.commit()
+            unread_count = get_unread_count(cur, userId)
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        print(f"Error marking notifications read: {e}")
+        return jsonify({'error': 'Unable to update notifications'}), 500
+
+    return jsonify({
+        'success': True,
+        'unreadCount': unread_count
+    })
+
 @app.route("/vieworders")
 def vieworders():
     if not is_admin():
         return "Access Denied! Only admin can view orders.", 403
 
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("""
             SELECT allorders.orderId, users.firstName, users.lastName, users.email, 
@@ -510,7 +755,7 @@ def user_orders():
     
     email = session['email']
 
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT userId FROM users WHERE email = ?", (email,))
         result = cur.fetchone()
@@ -546,7 +791,7 @@ def removeFromCart():
     
     productId = int(productId)
     
-    with sqlite3.connect('database.db') as conn:
+    with connect_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT userId FROM users WHERE email = ?", (email,))
         result = cur.fetchone()
@@ -568,7 +813,7 @@ def logout():
     return redirect(url_for('root'))
 
 def is_valid(email, password):
-    with sqlite3.connect('database.db') as con:
+    with connect_db() as con:
         cur = con.cursor()
         cur.execute('SELECT email, password FROM users WHERE email = ?', (email,))
         result = cur.fetchone()
@@ -592,7 +837,7 @@ def register():
         country = request.form['country']
         phone = request.form['phone']
 
-        with sqlite3.connect('database.db') as con:
+        with connect_db() as con:
             try:
                 cur = con.cursor()
                 cur.execute('INSERT INTO users (password, email, firstName, lastName, address1, address2, zipcode, city, state, country, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 

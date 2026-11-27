@@ -74,6 +74,8 @@
 </head>
 <body>
 
+    <div class="notification-topbar">{% include '_notification_bell.html' %}</div>
+
     <h2>Edit Product</h2>
 
 <form action="{{ url_for('edit_product', productId=product[0]) }}" method="POST" enctype="multipart/form-data">
